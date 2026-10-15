@@ -1,3 +1,4 @@
+pub mod agent;
 pub mod store;
 pub mod tls;
 pub mod win;
