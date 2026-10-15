@@ -96,7 +96,16 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         com.pcremote.stream.ToolbarActions {
 
     private final com.pcremote.stream.ToolbarState toolbarState = new com.pcremote.stream.ToolbarState();
-    private final com.pcremote.stream.PoorConnectionWatch poorWatch = new com.pcremote.stream.PoorConnectionWatch(10_000);
+    private final Handler pcrHandler = new Handler(Looper.getMainLooper());
+    private final com.pcremote.stream.PoorConnectionWatch poorWatch = new com.pcremote.stream.PoorConnectionWatch(10_000,
+            (delay, r) -> { pcrHandler.postDelayed(r, delay); return kotlin.Unit.INSTANCE; },
+            r -> { pcrHandler.removeCallbacks(r); return kotlin.Unit.INSTANCE; },
+            () -> {
+                if (com.pcremote.quality.QualityPrefs.INSTANCE.current(this) != com.pcremote.quality.QualityPreset.BATTERY) {
+                    toolbarState.setOfferLowerQuality(true);
+                }
+                return kotlin.Unit.INSTANCE;
+            });
     private int lastButtonState = 0;
 
     // Only 2 touches are supported
@@ -2433,10 +2442,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             public void run() {
                 boolean poor = connectionStatus == MoonBridge.CONN_STATUS_POOR;
                 toolbarState.setLink(poor ? com.pcremote.stream.LinkState.POOR : com.pcremote.stream.LinkState.GOOD);
-                if (poorWatch.update(poor, android.os.SystemClock.uptimeMillis())
-                        && com.pcremote.quality.QualityPrefs.INSTANCE.current(Game.this) != com.pcremote.quality.QualityPreset.BATTERY) {
-                    toolbarState.setOfferLowerQuality(true);
-                }
+                poorWatch.onStatus(poor);
 
                 if (prefConfig.disableWarnings) {
                     return;

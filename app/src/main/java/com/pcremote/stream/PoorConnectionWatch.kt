@@ -1,12 +1,20 @@
 package com.pcremote.stream
 
-/** Reports true once the connection has been continuously poor for at least [thresholdMs]. */
-class PoorConnectionWatch(private val thresholdMs: Long = 10_000) {
-    private var poorSince = -1L
+/**
+ * Calls [onSustained] once the connection has stayed poor for [thresholdMs].
+ * The native core reports POOR only on change, so this owns a timer instead of polling.
+ */
+class PoorConnectionWatch(
+    private val thresholdMs: Long,
+    private val post: (Long, Runnable) -> Unit,
+    private val cancel: (Runnable) -> Unit,
+    private val onSustained: () -> Unit,
+) {
+    private val fire = Runnable { onSustained() }
+    private var armed = false
 
-    fun update(poor: Boolean, nowMs: Long): Boolean {
-        if (!poor) { poorSince = -1; return false }
-        if (poorSince < 0) poorSince = nowMs
-        return nowMs - poorSince >= thresholdMs
+    fun onStatus(poor: Boolean) {
+        if (poor && !armed) { armed = true; post(thresholdMs, fire) }
+        else if (!poor && armed) { armed = false; cancel(fire) }
     }
 }
