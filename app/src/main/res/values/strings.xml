@@ -325,4 +325,21 @@
     <string name="pcr_preset_SHARP">Sharp: 1080p · 60 FPS · needs 5 GHz Wi-Fi</string>
     <string name="pcr_preset_BATTERY">Battery saver: 720p · 30 FPS</string>
     <string name="pcr_advanced">Advanced settings</string>
+    <string name="pcr_pc_list_title">Your PCs</string>
+    <string name="pcr_searching">Looking for PCs on your Wi-Fi… Make sure Sunshine is running on your PC.</string>
+    <string name="pcr_connect">Connect</string>
+    <string name="pcr_pair">Pair</string>
+    <string name="pcr_wake">Wake up</string>
+    <string name="pcr_checking">Checking…</string>
+    <string name="pcr_add_manually">Add PC by IP</string>
+    <string name="pcr_setup_guide">Setup guide</string>
+    <string name="pcr_pair_title">Pair with %1$s</string>
+    <string name="pcr_pair_steps">1. On your PC, open Sunshine (tray icon → Open Sunshine, or https://localhost:47990).\n2. Go to the PIN tab.\n3. Type this PIN and a name for this phone, then click Send.</string>
+    <string name="pcr_pair_wrong_pin">That PIN didn\'t match. Try again; a new PIN will be shown.</string>
+    <string name="pcr_pair_failed">Pairing failed. Make sure Sunshine is running and try again.</string>
+    <string name="pcr_pair_ingame">Stop the current stream on the PC first, then pair.</string>
+    <string name="pcr_pair_busy">Another device is pairing with this PC right now. Try again in a moment.</string>
+    <string name="pcr_no_apps">Sunshine has no apps to stream. Add the \"Desktop\" app in Sunshine → Applications.</string>
+    <string name="pcr_hint_24">You\'re on 2.4 GHz Wi-Fi. Switch your phone to your router\'s 5 GHz network for a much smoother stream.</string>
+    <string name="pcr_hint_weak">Weak Wi-Fi signal. Move closer to the router, or connect your PC with a cable, for a smoother stream.</string>
 </resources>
