@@ -5,6 +5,7 @@ pub mod files;
 pub mod host;
 pub mod input;
 pub mod media;
+pub mod pad;
 pub mod power;
 pub mod proto;
 pub mod store;

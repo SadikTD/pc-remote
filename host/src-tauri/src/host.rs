@@ -5,6 +5,7 @@ use crate::proto::{ClientMsg, PcInfo, ServerMsg};
 use crate::store::Store;
 use crate::sunshine::{self, Sunshine};
 use crate::files::{self, Incoming, Outgoing};
+use crate::pad::{self, Pads};
 use crate::{clip, input, media, power, win};
 use std::sync::{Arc, Mutex};
 
@@ -12,11 +13,14 @@ pub struct Host {
     pub store: Arc<Mutex<Store>>,
     pub sunshine: Arc<Sunshine>,
     pub outgoing: Outgoing,
+    /// None when the ViGEmBus driver isn't installed.
+    pads: Option<Arc<dyn pad::Bus>>,
 }
 
 impl Host {
     pub fn new(store: Arc<Mutex<Store>>, sunshine: Arc<Sunshine>) -> Self {
-        Host { store, sunshine, outgoing: Outgoing::default() }
+        let pads = pad::ViGEm::connect().map(|b| Arc::new(b) as Arc<dyn pad::Bus>);
+        Host { store, sunshine, outgoing: Outgoing::default(), pads }
     }
 }
 
@@ -46,11 +50,21 @@ impl Handlers for Host {
     }
 
     fn caps(&self) -> Vec<String> {
-        ["input", "power", "media", "files", "clip"].map(String::from).to_vec()
+        let mut c: Vec<String> = ["input", "power", "media", "files", "clip"].map(String::from).to_vec();
+        if self.pads.is_some() {
+            c.push("pad".into());
+        }
+        c
     }
 
     fn session(&self, _device: &str, out: Outbox) -> Box<dyn Session> {
         let dir = self.store.lock().unwrap().config().files_dir.clone();
+        let pads = self.pads.clone().map(|bus| {
+            let out = out.clone();
+            Pads::new(bus, Box::new(move |id, lo, hi| {
+                out.send(ServerMsg::Rumble { id, lo, hi });
+            }))
+        });
         Box::new(HostSession {
             input: input::Input::new(input::SendInputEmitter),
             out,
@@ -60,6 +74,7 @@ impl Handlers for Host {
             outgoing: self.outgoing.clone(),
             clip: None,
             sid: u64::from_le_bytes(crate::store::random::<8>()),
+            pads,
         })
     }
 }
@@ -74,6 +89,7 @@ pub struct HostSession {
     clip: Option<tokio::task::JoinHandle<()>>,
     /// Tags this phone's clipboard writes so they are not echoed back to it.
     sid: u64,
+    pads: Option<Pads>,
 }
 
 impl HostSession {
@@ -96,6 +112,9 @@ impl Drop for HostSession {
     fn drop(&mut self) {
         toggle(&mut self.media, false, || unreachable!());
         toggle(&mut self.clip, false, || unreachable!());
+        if let Some(p) = self.pads.as_mut() {
+            p.linger(std::time::Duration::from_secs(5));
+        }
     }
 }
 
@@ -129,6 +148,16 @@ impl Session for HostSession {
                 }
                 Err(code) => err(code, "unknown media command"),
             },
+            ClientMsg::Pad { id, btn, lt, rt, lx, ly, rx, ry } => {
+                let Some(p) = self.pads.as_mut() else { return err("unsupported", "gamepad driver (ViGEmBus) is not installed") };
+                p.pad(id, &pad::PadState { btn, lt, rt, lx, ly, rx, ry }).err().and_then(|c| err(c, "gamepad error"))
+            }
+            ClientMsg::PadOff { id } => {
+                if let Some(p) = self.pads.as_mut() {
+                    p.off(id);
+                }
+                None
+            }
             ClientMsg::ClipSub { on } => {
                 if on && !self.allow_clip() {
                     return err("unsupported", "clipboard sharing is off on this PC");
