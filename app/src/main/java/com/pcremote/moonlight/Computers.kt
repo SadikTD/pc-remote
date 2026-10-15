@@ -17,7 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.runInterruptible
 
 /** Binds Moonlight's ComputerManagerService and exposes its computers as a flow. */
 class Computers(private val ctx: Context) {
@@ -50,18 +50,22 @@ class Computers(private val ctx: Context) {
     }
 
     /** Adds the PC at [host] to Moonlight (if needed) and pairs with [pin]; returns its uuid or null. */
-    suspend fun pair(host: String, pin: String): String? = withContext(Dispatchers.IO) {
+    suspend fun pair(host: String, pin: String): String? {
         val b = binder.filterNotNull().first()
+        return runInterruptible(Dispatchers.IO) { pairBlocking(b, host, pin) }
+    }
+
+    private fun pairBlocking(b: ComputerManagerService.ComputerManagerBinder, host: String, pin: String): String? {
         val details = ComputerDetails().apply { manualAddress = ComputerDetails.AddressTuple(host, NvHTTP.DEFAULT_HTTP_PORT) }
-        if (!b.addComputerBlocking(details)) return@withContext null
+        if (!b.addComputerBlocking(details)) return null
         val pc = b.getComputer(details.uuid) ?: details
         val http = NvHTTP(ServerHelper.getCurrentAddressFromComputer(pc), pc.httpsPort, b.uniqueId, pc.serverCert,
             PlatformBinding.getCryptoProvider(ctx))
-        if (http.pairState == PairingManager.PairState.PAIRED) return@withContext pc.uuid
+        if (http.pairState == PairingManager.PairState.PAIRED) return pc.uuid
         val pm = http.pairingManager
-        if (pm.pair(http.getServerInfo(true), pin) != PairingManager.PairState.PAIRED) return@withContext null
+        if (pm.pair(http.getServerInfo(true), pin) != PairingManager.PairState.PAIRED) return null
         b.getComputer(pc.uuid)?.serverCert = pm.pairedCert
         b.invalidateStateForComputer(pc.uuid)
-        pc.uuid
+        return pc.uuid
     }
 }

@@ -16,24 +16,31 @@ class PairingModelTest {
     private val pc = PcInfo("pc-1", "DESK", macs = listOf("AA:BB"))
 
     private class Fakes(
-        val agent: Result<Pair<String, PcInfo>>,
+        val agent: Result<AgentPaired>,
         val moonlightUuid: String? = "ML-UUID",
+        val moonlightHangs: Boolean = false,
     ) {
         val stored = mutableListOf<PairedPc>()
         var pinSeenByAgent: String? = null
         var pinSeenByMoonlight: String? = null
+        var hostSeenByMoonlight: String? = null
         val deps = PairingDeps(
             agentPair = { _: PairUri, _: String, pin: String -> pinSeenByAgent = pin; agent },
-            moonlightPair = { _: String, pin: String -> pinSeenByMoonlight = pin; moonlightUuid },
+            moonlightPair = { host: String, pin: String ->
+                hostSeenByMoonlight = host; pinSeenByMoonlight = pin
+                if (moonlightHangs) kotlinx.coroutines.awaitCancellation()
+                moonlightUuid
+            },
             save = { stored += it },
             device = "Pixel 8",
         )
     }
 
-    private fun fail(r: FailReason) = Result.failure<Pair<String, PcInfo>>(AgentPairException(r))
+    private fun ok(host: String = "192.168.0.9") = Result.success(AgentPaired("tok", pc, host))
+    private fun fail(r: FailReason) = Result.failure<AgentPaired>(AgentPairException(r))
 
     @Test fun `not a pc remote code`() = runTest {
-        val f = Fakes(Result.success("tok" to pc))
+        val f = Fakes(ok())
         val m = PairingModel(f.deps)
         m.onScanned("https://example.com")
         assertEquals(PairingState.Error(R.string.pcr_qr_invalid), m.state.value)
@@ -61,7 +68,7 @@ class PairingModelTest {
     }
 
     @Test fun `success stores the pc with token and moonlight uuid, same pin both sides`() = runTest {
-        val f = Fakes(Result.success("tok" to pc))
+        val f = Fakes(ok())
         val m = PairingModel(f.deps)
         m.onScanned(qr)
         assertEquals(PairingState.Done("pc-1"), m.state.value)
@@ -72,10 +79,24 @@ class PairingModelTest {
     }
 
     @Test fun `moonlight pairing failure still saves agent pairing`() = runTest {
-        val f = Fakes(Result.success("tok" to pc), moonlightUuid = null)
+        val f = Fakes(ok(), moonlightUuid = null)
         val m = PairingModel(f.deps)
         m.onScanned(qr)
         assertEquals(PairingState.Done("pc-1"), m.state.value)
         assertEquals(null, f.stored.single().moonlightUuid)
+    }
+
+    @Test fun `moonlight pairing that never finishes times out and still saves`() = runTest {
+        val f = Fakes(ok(), moonlightHangs = true)
+        val m = PairingModel(f.deps)
+        m.onScanned(qr)
+        assertEquals(PairingState.Done("pc-1"), m.state.value)
+        assertEquals(null, f.stored.single().moonlightUuid)
+    }
+
+    @Test fun `moonlight pairs with the host the agent actually reached`() = runTest {
+        val f = Fakes(ok(host = "10.0.0.5"))
+        PairingModel(f.deps).onScanned("pcremote://pair?n=Desk&h=192.168.0.9,10.0.0.5&p=47999&fp=$fp&t=otp")
+        assertEquals("10.0.0.5", f.hostSeenByMoonlight)
     }
 }

@@ -95,6 +95,9 @@ class AgentConnection(
     val binary: SharedFlow<ByteArray> = _binary
 
     @Volatile private var ws: Ws? = null
+    /** The host from [hosts] that the current connection reached. */
+    @Volatile var connectedHost: String? = null
+        private set
     @Volatile private var session = 0
     @Volatile private var closed = false
     @Volatile private var handshake: CompletableDeferred<Msg>? = null
@@ -112,12 +115,17 @@ class AgentConnection(
             val id = ++session
             val opened = CompletableDeferred<Open>()
             val s = factory.open(h, port, fingerprint, listenerFor(id, opened))
-            when (withTimeoutOrNull(2_000) { opened.await() } ?: Open.REFUSED) {
-                Open.OK -> { ws = s; return s }
-                Open.MISMATCH -> { _state.value = AgentState.Failed(FailReason.CERT_MISMATCH); return null }
+            val result = withTimeoutOrNull(2_000) { opened.await() } ?: run {
+                opened.complete(Open.REFUSED) // a late onOpen for this attempt is ignored
+                Open.REFUSED
+            }
+            when (result) {
+                Open.OK -> { ws = s; connectedHost = h; return s }
+                Open.MISMATCH -> { session++; _state.value = AgentState.Failed(FailReason.CERT_MISMATCH); return null }
                 Open.REFUSED -> s.close()
             }
         }
+        session++ // late callbacks from the abandoned attempts must not revive this connection
         _state.value = AgentState.Failed(FailReason.UNREACHABLE)
         return null
     }
@@ -187,6 +195,7 @@ class AgentConnection(
     }
 
     private fun fail(code: String?, s: Ws) {
+        session++ // the close echo from this socket arrives later and must be ignored
         s.close()
         ws = null
         _state.value = AgentState.Failed(

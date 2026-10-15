@@ -18,6 +18,7 @@ private class FakeWs(
 ) : WsFactory {
     val opened = mutableListOf<String>()
     var live: FakeSocket? = null
+    var slow: FakeSocket? = null
 
     inner class FakeSocket(val l: WsListener) : Ws {
         val sent = mutableListOf<Msg>()
@@ -28,7 +29,9 @@ private class FakeWs(
             return true
         }
         override fun send(bytes: ByteArray) = true
-        override fun close() { l.onClosed() }
+        /** Like OkHttp, close callbacks arrive later; tests deliver them with [deliverClose]. */
+        override fun close() {}
+        fun deliverClose() = l.onClosed()
         fun drop() = l.onFailure(java.io.EOFException("drop"), false)
     }
 
@@ -37,6 +40,7 @@ private class FakeWs(
         val s = FakeSocket(listener)
         when (behaviour[host]) {
             "ok" -> { live = s; listener.onOpen() }
+            "slow" -> slow = s // opens only when the test says so
             "mismatch" -> listener.onFailure(javax.net.ssl.SSLHandshakeException("pin"), true)
             else -> listener.onFailure(java.net.ConnectException("refused"), false)
         }
@@ -142,5 +146,23 @@ class AgentConnectionTest {
         f.live!!.l.onText(Wire.encode(Msg.Status(true, "x")))
         assertEquals(Msg.Status(true, "x"), got.await())
         c.close()
+    }
+
+    @Test fun lateCloseAfterErrorKeepsFailure() = runTest {
+        val f = FakeWs(mapOf("h1" to "ok"), server)
+        val c = conn(f, listOf("h1"))
+        c.hello("old", "Pixel")
+        f.live!!.deliverClose()
+        assertEquals(AgentState.Failed(FailReason.REVOKED), c.state.value)
+    }
+
+    @Test fun lateOpenAfterTimeoutKeepsFailure() = runTest {
+        val f = FakeWs(mapOf("h1" to "slow"), server)
+        val c = conn(f, listOf("h1"))
+        c.hello("good", "Pixel")
+        assertEquals(AgentState.Failed(FailReason.UNREACHABLE), c.state.value)
+        f.slow!!.l.onOpen()
+        f.slow!!.deliverClose()
+        assertEquals(AgentState.Failed(FailReason.UNREACHABLE), c.state.value)
     }
 }
