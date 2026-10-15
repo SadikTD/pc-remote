@@ -2393,6 +2393,8 @@ dependencies = [
 name = "pc-remote-host"
 version = "1.0.0"
 dependencies = [
+ "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-single-instance",
