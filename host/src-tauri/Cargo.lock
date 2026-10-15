@@ -2522,6 +2522,7 @@ dependencies = [
 name = "pc-remote-host"
 version = "1.0.0"
 dependencies = [
+ "base64 0.23.1",
  "rcgen",
  "ring",
  "serde",
