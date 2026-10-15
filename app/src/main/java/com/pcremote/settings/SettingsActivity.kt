@@ -21,7 +21,7 @@ import com.pcremote.quality.QualityPrefs
 class SettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { MaterialTheme(colorScheme = darkColorScheme()) { Surface { Screen() } } }
+        setContent { com.pcremote.ui.theme.MidnightTheme(dark = true) { Surface { Screen() } } }
     }
 
     @Composable

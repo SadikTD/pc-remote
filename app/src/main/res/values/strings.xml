@@ -384,4 +384,25 @@
     <string name="pcr_ob_pairing">Pairing with %1$s…</string>
     <string name="pcr_ob_done">Paired with your PC</string>
     <string name="pcr_try_again">Try again</string>
+    <string name="pcr_mode_screen">Screen</string>
+    <string name="pcr_mode_remote">Remote</string>
+    <string name="pcr_mode_media">Media</string>
+    <string name="pcr_mode_slides">Slides</string>
+    <string name="pcr_mode_pad">Gamepad</string>
+    <string name="pcr_mode_files">Files</string>
+    <string name="pcr_morning">Good morning</string>
+    <string name="pcr_afternoon">Good afternoon</string>
+    <string name="pcr_evening">Good evening</string>
+    <string name="pcr_add_pc">Add PC</string>
+    <string name="pcr_no_pcs_title">No PCs yet</string>
+    <string name="pcr_no_pcs_body">Install PC Remote on your PC, then scan the code it shows.</string>
+    <string name="pcr_status_online">Online</string>
+    <string name="pcr_status_offline">Offline</string>
+    <string name="pcr_status_streaming">Streaming</string>
+    <string name="pcr_open">Open</string>
+    <string name="pcr_help">Help</string>
+    <string name="pcr_save">Save</string>
+    <string name="pcr_rename">Rename</string>
+    <string name="pcr_remove">Remove</string>
+    <string name="pcr_remove_confirm">Tap again to remove</string>
 </resources>

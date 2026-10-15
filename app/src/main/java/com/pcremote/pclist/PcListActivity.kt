@@ -62,7 +62,7 @@ class PcListActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         bindService(Intent(this, ComputerManagerService::class.java), conn, BIND_AUTO_CREATE)
-        setContent { MaterialTheme(colorScheme = darkColorScheme()) { Screen() } }
+        setContent { com.pcremote.ui.theme.MidnightTheme(dark = true) { Screen() } }
     }
 
     override fun onResume() { super.onResume(); if (!pairing) binder?.startPolling(listener) }
