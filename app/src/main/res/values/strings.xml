@@ -442,4 +442,11 @@
     <string name="pcr_source">Source code</string>
     <string name="pcr_source_desc">Open source on GitHub (GPL-3.0)</string>
     <string name="pcr_scanner_unavailable">The QR scanner isn\'t available on this phone yet. Pair by IP address instead.</string>
+    <string name="pcr_power">Power</string>
+    <string name="pcr_conn_connecting">Connecting to your PC…</string>
+    <string name="pcr_conn_revoked">This phone was removed on the PC. Scan the code to pair again.</string>
+    <string name="pcr_conn_unreachable">Can\'t reach your PC. Is it on, and is PC Remote running?</string>
+    <string name="pcr_conn_unknown_pc">This PC is no longer paired.</string>
+    <string name="pcr_remote_hint">Tap to click · two fingers to scroll or right-click · hold to drag</string>
+    <string name="pcr_remote_typing">Type on your keyboard. It goes straight to your PC.</string>
 </resources>

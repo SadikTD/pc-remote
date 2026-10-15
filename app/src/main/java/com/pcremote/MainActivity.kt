@@ -45,7 +45,7 @@ const val PREF_ONBOARDED = "pcremote_onboarded"
 const val SETUP_GUIDE_URL = "https://github.com/SadikTD/pc-remote/blob/main/docs/setup-sunshine.md"
 
 /** Modes with a screen in this build; Track C adds the rest. */
-val IMPLEMENTED_MODES = setOf(Mode.SCREEN)
+val IMPLEMENTED_MODES = setOf(Mode.SCREEN, Mode.REMOTE)
 
 class MainActivity : ComponentActivity() {
     private lateinit var computers: Computers
@@ -103,6 +103,9 @@ class MainActivity : ComponentActivity() {
                             onManual = { startActivity(Intent(this@MainActivity, PcListActivity::class.java)) },
                             onSkip = ::finishOnboarding)
                     }
+                    composable(Routes.modePattern(Mode.REMOTE)) { e ->
+                        com.pcremote.modes.RemoteScreen(modeId(e), onBack = { nav.popBackStack() }, onPower = {})
+                    }
                     composable(Routes.SETTINGS) {
                         com.pcremote.settings.SettingsScreen(settings, onBack = { nav.popBackStack() },
                             onThemeChanged = { themeTick++; if (settings.theme == com.pcremote.settings.ThemeChoice.LIGHT) recreate() })
@@ -116,7 +119,9 @@ class MainActivity : ComponentActivity() {
                             if (pairState is com.pcremote.onboarding.PairingState.Done) { pairing.reset(); home.stop(); home.start() }
                         }
                         HomeScreen(cards, thumbs, IMPLEMENTED_MODES, HomeActions(
-                            open = { card, mode -> openMode(card.moonlightUuid, mode) },
+                            open = { card, mode ->
+                                if (mode == Mode.SCREEN) openMode(card.moonlightUuid, mode) else nav.navigate(Routes.mode(card.id, mode))
+                            },
                             primary = { card ->
                                 when (card.primary) {
                                     PrimaryAction.OPEN -> {
@@ -143,6 +148,9 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    private fun modeId(e: androidx.navigation.NavBackStackEntry) =
+        java.net.URLDecoder.decode(e.arguments?.getString(Routes.ARG_ID).orEmpty(), "UTF-8")
 
     private fun manualPairing() = startActivity(Intent(this, PcListActivity::class.java))
 
