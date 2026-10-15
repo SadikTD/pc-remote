@@ -5,7 +5,7 @@ use crate::proto::{ClientMsg, PcInfo, ServerMsg};
 use crate::store::Store;
 use crate::sunshine::{self, Sunshine};
 use crate::files::{self, Incoming, Outgoing};
-use crate::{input, media, power, win};
+use crate::{clip, input, media, power, win};
 use std::sync::{Arc, Mutex};
 
 pub struct Host {
@@ -46,7 +46,7 @@ impl Handlers for Host {
     }
 
     fn caps(&self) -> Vec<String> {
-        ["input", "power", "media", "files"].map(String::from).to_vec()
+        ["input", "power", "media", "files", "clip"].map(String::from).to_vec()
     }
 
     fn session(&self, _device: &str, out: Outbox) -> Box<dyn Session> {
@@ -58,6 +58,8 @@ impl Handlers for Host {
             store: self.store.clone(),
             incoming: Incoming::new(dir.into()),
             outgoing: self.outgoing.clone(),
+            clip: None,
+            sid: u64::from_le_bytes(crate::store::random::<8>()),
         })
     }
 }
@@ -69,6 +71,15 @@ pub struct HostSession {
     store: Arc<Mutex<Store>>,
     incoming: Incoming,
     outgoing: Outgoing,
+    clip: Option<tokio::task::JoinHandle<()>>,
+    /// Tags this phone's clipboard writes so they are not echoed back to it.
+    sid: u64,
+}
+
+impl HostSession {
+    fn allow_clip(&self) -> bool {
+        self.store.lock().unwrap().config().allow_clip
+    }
 }
 
 /// Starts or stops a per-session subscription task.
@@ -84,6 +95,7 @@ fn toggle(slot: &mut Option<tokio::task::JoinHandle<()>>, on: bool, start: impl 
 impl Drop for HostSession {
     fn drop(&mut self) {
         toggle(&mut self.media, false, || unreachable!());
+        toggle(&mut self.clip, false, || unreachable!());
     }
 }
 
@@ -117,6 +129,42 @@ impl Session for HostSession {
                 }
                 Err(code) => err(code, "unknown media command"),
             },
+            ClientMsg::ClipSub { on } => {
+                if on && !self.allow_clip() {
+                    return err("unsupported", "clipboard sharing is off on this PC");
+                }
+                let (out, store, sid) = (self.out.clone(), self.store.clone(), self.sid);
+                toggle(&mut self.clip, on, || {
+                    let mut rx = clip::hub().tx.subscribe();
+                    tokio::spawn(async move {
+                        loop {
+                            match rx.recv().await {
+                                Ok((origin, m)) if origin != Some(sid) && store.lock().unwrap().config().allow_clip => {
+                                    if !out.send(m) {
+                                        break;
+                                    }
+                                }
+                                Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                                Err(_) => break,
+                            }
+                        }
+                    })
+                });
+                None
+            }
+            ClientMsg::Clip { mime, data } => {
+                if !self.allow_clip() {
+                    return err("unsupported", "clipboard sharing is off on this PC");
+                }
+                match clip::Content::from_msg(&mime, &data).filter(|c| clip::within_limit(c.mime(), c.bytes().len())) {
+                    Some(c) => {
+                        let sid = self.sid;
+                        tokio::task::spawn_blocking(move || clip::hub().write(&c, sid));
+                        None
+                    }
+                    None => err("bad_request", "unsupported or oversized clipboard data"),
+                }
+            }
             ClientMsg::FileBegin { id, name, size } => Some(if self.store.lock().unwrap().config().allow_files {
                 self.incoming.begin(&id, &name, size)
             } else {

@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod clip;
 pub mod commands;
 pub mod files;
 pub mod host;
