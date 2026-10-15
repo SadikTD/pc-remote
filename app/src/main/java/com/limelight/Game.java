@@ -239,8 +239,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         setContentView(R.layout.activity_game);
 
         // Start the spinner
-        spinner = SpinnerDialog.displayDialog(this, getResources().getString(R.string.conn_establishing_title),
-                getResources().getString(R.string.conn_establishing_msg), true);
+        // PC Remote shows its own connecting screen in the overlay instead of Moonlight's dialog
+        toolbarState.setConnecting(getResources().getString(R.string.conn_establishing_msg));
+        toolbarState.setPcName(getIntent().getStringExtra(EXTRA_PC_NAME));
 
         // Read the stream preferences
         prefConfig = PreferenceConfiguration.readPreferences(this);
@@ -554,6 +555,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
         // PC Remote toolbar overlay; its stats readout replaces the old text overlay
         toolbarState.setTrackpad(prefConfig.touchscreenTrackpad);
+        toolbarState.setCoachShown(android.preference.PreferenceManager.getDefaultSharedPreferences(this).getBoolean("pcremote_coach_shown", false));
         performanceOverlayView.setAlpha(0f);
         toolbarView = com.pcremote.stream.StreamToolbarHost.attach((FrameLayout) streamView.getParent(), toolbarState, this);
 
@@ -564,6 +566,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         }
 
         if (!decoderRenderer.isAvcSupported()) {
+            toolbarState.setConnecting(null);
             if (spinner != null) {
                 spinner.dismiss();
                 spinner = null;
@@ -588,11 +591,19 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         }
     }
 
-    @Override public void shortcut(com.pcremote.stream.Shortcut s) {
+    @Override public void shortcut(com.pcremote.stream.Shortcut s) { sendKeys(s.events()); }
+
+    @Override public void keys(java.util.List<com.pcremote.stream.KeyEvt> events) { sendKeys(events); }
+
+    private void sendKeys(java.util.List<com.pcremote.stream.KeyEvt> events) {
         if (conn == null) return;
-        for (com.pcremote.stream.KeyEvt e : s.events()) {
+        for (com.pcremote.stream.KeyEvt e : events) {
             conn.sendKeyboardInput(e.getKeyMap(), e.getDirection(), e.getModifiers(), (byte) 0);
         }
+    }
+
+    @Override public void coachDone() {
+        android.preference.PreferenceManager.getDefaultSharedPreferences(this).edit().putBoolean("pcremote_coach_shown", true).apply();
     }
 
     @Override public void keyboard() { toggleKeyboard(); }
@@ -1488,7 +1499,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                 return true;
             }
 
-            conn.sendKeyboardInput(translated, KeyboardPacket.KEY_DOWN, getModifierState(event),
+            // Sticky modifiers from the PC Remote keyboard bar wrap the typed key
+            sendKeys(toolbarState.getBar().downPrefix());
+            conn.sendKeyboardInput(translated, KeyboardPacket.KEY_DOWN, (byte) (getModifierState(event) | toolbarState.getBar().activeMask()),
                     keyboardTranslator.hasNormalizedMapping(event.getKeyCode(), event.getDeviceId()) ? 0 : MoonBridge.SS_KBE_FLAG_NON_NORMALIZED);
         }
 
@@ -1552,8 +1565,12 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                 return (unicodeChar & KeyCharacterMap.COMBINING_ACCENT) == 0 && (unicodeChar & KeyCharacterMap.COMBINING_ACCENT_MASK) != 0;
             }
 
-            conn.sendKeyboardInput(translated, KeyboardPacket.KEY_UP, getModifierState(event),
+            conn.sendKeyboardInput(translated, KeyboardPacket.KEY_UP, (byte) (getModifierState(event) | toolbarState.getBar().activeMask()),
                     keyboardTranslator.hasNormalizedMapping(event.getKeyCode(), event.getDeviceId()) ? 0 : MoonBridge.SS_KBE_FLAG_NON_NORMALIZED);
+            if (toolbarState.getBar().anyActive()) {
+                sendKeys(toolbarState.getBar().upSuffix());
+                toolbarState.setBarTick(toolbarState.getBarTick() + 1);
+            }
         }
 
         return true;
@@ -2331,6 +2348,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
+                toolbarState.setConnecting(getResources().getString(R.string.conn_starting) + " " + stage);
                 if (spinner != null) {
                     spinner.setMessage(getResources().getString(R.string.conn_starting) + " " + stage);
                 }
@@ -2389,6 +2407,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
+                toolbarState.setConnecting(null);
                 if (spinner != null) {
                     spinner.dismiss();
                     spinner = null;
@@ -2497,6 +2516,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             @Override
             public void run() {
                 getIntent().putExtra(EXTRA_RECONNECT_ATTEMPT, 0);
+                toolbarState.setConnecting(null);
                 if (spinner != null) {
                     spinner.dismiss();
                     spinner = null;
@@ -2504,6 +2524,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
                 connected = true;
                 connecting = false;
+                toolbarState.setConnected(true);
                 updatePipAutoEnter();
 
                 // Hide the mouse cursor now after a short delay.

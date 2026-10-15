@@ -405,4 +405,22 @@
     <string name="pcr_rename">Rename</string>
     <string name="pcr_remove">Remove</string>
     <string name="pcr_remove_confirm">Tap again to remove</string>
+    <string name="pcr_link_good">Live</string>
+    <string name="pcr_link_poor">Weak signal</string>
+    <string name="pcr_link_reconnecting">Reconnecting</string>
+    <string name="pcr_controls">Controls</string>
+    <string name="pcr_trackpad">Trackpad</string>
+    <string name="pcr_direct_touch">Touch</string>
+    <string name="pcr_shortcuts">Shortcuts</string>
+    <string name="pcr_sc_desktop">Show desktop</string>
+    <string name="pcr_sc_snip">Screenshot</string>
+    <string name="pcr_sc_taskmgr">Task Manager</string>
+    <string name="pcr_sc_close_window">Close window</string>
+    <string name="pcr_coach_title">Quick tips</string>
+    <string name="pcr_coach_edge">Swipe in from the right edge for keyboard, shortcuts and more.</string>
+    <string name="pcr_coach_tap">Tap to click, two-finger tap to right-click, two fingers to scroll.</string>
+    <string name="pcr_coach_pinch">Pinch to zoom in on small text, two fingers to pan.</string>
+    <string name="pcr_got_it">Got it</string>
+    <string name="pcr_connecting_to">Connecting to %1$s</string>
+    <string name="pcr_cancel">Cancel</string>
 </resources>
