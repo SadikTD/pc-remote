@@ -37,7 +37,6 @@ import com.limelight.utils.UiHelper
 import com.pcremote.quality.LinkAdvisor
 import com.pcremote.quality.QualityPrefs
 import com.pcremote.quality.WifiHint
-import com.pcremote.settings.SettingsActivity
 import kotlin.concurrent.thread
 
 class PcListActivity : ComponentActivity() {
@@ -73,11 +72,9 @@ class PcListActivity : ComponentActivity() {
     @Composable
     private fun Screen() {
         Scaffold(topBar = {
-            TopAppBar(title = { Text(stringResource(R.string.pcr_pc_list_title)) }, actions = {
+            TopAppBar(title = { Text(stringResource(R.string.pcr_ob_manual)) }, actions = {
                 IconButton({ openSetupGuide() }) {
                     Icon(Icons.Default.HelpOutline, stringResource(R.string.pcr_setup_guide)) }
-                IconButton({ startActivity(Intent(this@PcListActivity, SettingsActivity::class.java)) }) {
-                    Icon(Icons.Default.Settings, stringResource(R.string.pcr_settings)) }
             })
         }, floatingActionButton = {
             ExtendedFloatingActionButton(

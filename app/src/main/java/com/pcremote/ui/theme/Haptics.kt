@@ -5,12 +5,9 @@ import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
-import android.preference.PreferenceManager
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
-
-const val PREF_HAPTICS = "pcremote_haptics"
 
 /** Subtle haptics for controls; all of them respect the Settings toggle. */
 class Haptics(private val ctx: Context) {
@@ -18,8 +15,7 @@ class Haptics(private val ctx: Context) {
         ctx.getSystemService(VibratorManager::class.java)?.defaultVibrator
     else @Suppress("DEPRECATION") ctx.getSystemService(Vibrator::class.java)
 
-    @Suppress("DEPRECATION")
-    private fun enabled() = PreferenceManager.getDefaultSharedPreferences(ctx).getBoolean(PREF_HAPTICS, true)
+    private fun enabled() = com.pcremote.settings.SettingsModel.get(ctx).haptics
 
     private fun play(predefined: Int, fallbackMs: Long, amp: Int) {
         val v = vib ?: return

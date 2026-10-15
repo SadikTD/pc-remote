@@ -423,4 +423,22 @@
     <string name="pcr_got_it">Got it</string>
     <string name="pcr_connecting_to">Connecting to %1$s</string>
     <string name="pcr_cancel">Cancel</string>
+    <string name="pcr_set_appearance">Appearance</string>
+    <string name="pcr_theme_system">System</string>
+    <string name="pcr_theme_dark">Dark</string>
+    <string name="pcr_theme_light">Light</string>
+    <string name="pcr_dynamic_color">Dynamic colour</string>
+    <string name="pcr_dynamic_color_desc">Match your wallpaper colours</string>
+    <string name="pcr_set_quality">Stream quality</string>
+    <string name="pcr_advanced_desc">Resolution, frame rate, bitrate, codec. Turns off Automatic.</string>
+    <string name="pcr_set_controls">Controls</string>
+    <string name="pcr_haptics">Haptic feedback</string>
+    <string name="pcr_natural_scroll">Natural scrolling</string>
+    <string name="pcr_natural_scroll_desc">Content follows your fingers, like a phone</string>
+    <string name="pcr_pointer_speed">Pointer speed</string>
+    <string name="pcr_gyro_sensitivity">Gyro sensitivity</string>
+    <string name="pcr_set_about">About</string>
+    <string name="pcr_version">Version</string>
+    <string name="pcr_source">Source code</string>
+    <string name="pcr_source_desc">Open source on GitHub (GPL-3.0)</string>
 </resources>

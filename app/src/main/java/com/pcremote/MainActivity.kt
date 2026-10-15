@@ -37,14 +37,11 @@ import com.pcremote.onboarding.PairingModel
 import com.pcremote.onboarding.PairingOverlay
 import com.pcremote.onboarding.scanQr
 import com.pcremote.pclist.PcListActivity
-import com.pcremote.settings.SettingsActivity
 import com.pcremote.ui.theme.MidnightTheme
 import kotlinx.coroutines.launch
 import kotlin.concurrent.thread
 
 const val PREF_ONBOARDED = "pcremote_onboarded"
-const val PREF_THEME = "pcremote_theme" // system | dark | light
-const val PREF_DYNAMIC = "pcremote_dynamic_color"
 const val SETUP_GUIDE_URL = "https://github.com/SadikTD/pc-remote/blob/main/docs/setup-sunshine.md"
 
 /** Modes with a screen in this build; Track C adds the rest. */
@@ -58,7 +55,8 @@ class MainActivity : ComponentActivity() {
     private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(this) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        val darkBars = prefs.getString(PREF_THEME, "dark") != "light"
+        val settings = com.pcremote.settings.SettingsModel.get(this)
+        val darkBars = settings.theme != com.pcremote.settings.ThemeChoice.LIGHT
         enableEdgeToEdge(
             statusBarStyle = if (darkBars) androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
             else androidx.activity.SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
@@ -79,9 +77,14 @@ class MainActivity : ComponentActivity() {
         val start = Routes.start(if (legacyOrPaired) 1 else 0, prefs.getBoolean(PREF_ONBOARDED, false))
 
         setContent {
-            val theme = prefs.getString(PREF_THEME, "dark")
-            val dark = when (theme) { "light" -> false; "system" -> isSystemInDarkTheme(); else -> true }
-            MidnightTheme(dark = dark, dynamic = prefs.getBoolean(PREF_DYNAMIC, false)) {
+            var themeTick by remember { mutableIntStateOf(0) }
+            val theme = remember(themeTick) { settings.theme }
+            val dark = when (theme) {
+                com.pcremote.settings.ThemeChoice.LIGHT -> false
+                com.pcremote.settings.ThemeChoice.SYSTEM -> isSystemInDarkTheme()
+                else -> true
+            }
+            MidnightTheme(dark = dark, dynamic = remember(themeTick) { settings.dynamicColor }) {
                 val nav = rememberNavController()
                 val scope = rememberCoroutineScope()
                 fun finishOnboarding() {
@@ -99,6 +102,10 @@ class MainActivity : ComponentActivity() {
                             onDone = { pairing.reset(); finishOnboarding() },
                             onManual = { startActivity(Intent(this@MainActivity, PcListActivity::class.java)) },
                             onSkip = ::finishOnboarding)
+                    }
+                    composable(Routes.SETTINGS) {
+                        com.pcremote.settings.SettingsScreen(settings, onBack = { nav.popBackStack() },
+                            onThemeChanged = { themeTick++; if (settings.theme == com.pcremote.settings.ThemeChoice.LIGHT) recreate() })
                     }
                     composable(Routes.HOME) {
                         LifecycleResumeEffect(Unit) { home.start(); onPauseOrDispose { home.stop() } }
@@ -123,7 +130,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             },
                             addPc = { scanQr(this@MainActivity) { raw -> scope.launch { pairing.onScanned(raw) } } },
-                            settings = { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) },
+                            settings = { nav.navigate(Routes.SETTINGS) },
                             refresh = { home.stop(); home.start() },
                             rename = { card, name -> home.rename(card.id, name) },
                             remove = { card -> home.remove(card) },
