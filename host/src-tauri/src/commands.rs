@@ -158,7 +158,8 @@ pub fn open_files_dir(app: State<'_, App>) -> Result<(), String> {
 /// Offers `path` to `device`, or to every connected phone; returns how many got the offer.
 pub fn offer_to(app: &App, device: Option<&str>, path: &std::path::Path) -> Result<usize, String> {
     let mut devices = device.map(|d| vec![d.to_string()]).unwrap_or_else(|| app.agent.connected());
-    devices.dedup();
+    devices.sort();
+    devices.dedup(); // one offer per phone, even with two sessions open
     let mut sent = 0;
     for d in devices {
         let m = crate::files::offer(&app.outgoing, path).map_err(|e| e.to_string())?;

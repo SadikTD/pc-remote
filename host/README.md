@@ -2,6 +2,8 @@
 
 The Windows side of PC Remote: a small tray app (Rust + Tauri 2) that pairs phones by QR code, runs the agent from [`docs/protocol.md`](../docs/protocol.md) on TLS port 47999, and drives a hidden Sunshine for screen sharing.
 
+The agent serves mouse and keyboard, media (now playing and volume), gamepads (virtual Xbox 360 via ViGEmBus), files both ways with resume, two-way clipboard, power, live thumbnails and access from anywhere (UPnP). Send a file to your phone from Home, or right-click it in Explorer and choose **Send to phone**.
+
 | Home | Devices | Settings | About |
 |---|---|---|---|
 | ![Home](docs/screens/home.jpg) | ![Devices](docs/screens/devices.jpg) | ![Settings](docs/screens/settings.jpg) | ![About](docs/screens/about.jpg) |
@@ -28,8 +30,8 @@ Data lives in `%APPDATA%\PC Remote`: `store.json` (paired phones as token hashes
 
 | | |
 |---|---|
-| `pc-remote-host.exe` | 4.8 MiB (5,026,816 bytes) |
-| Installer (with Sunshine MSI and ViGEmBus) | 37.1 MiB (38,904,165 bytes) |
-| Tray idle, 60 s after start | 2.4 MB private working set (17 MB incl. shared DLLs), 0.000 s CPU |
+| `pc-remote-host.exe` | 5.4 MiB (5,711,360 bytes) |
+| Installer (with Sunshine MSI and ViGEmBus) | 37.3 MiB (39,132,399 bytes) |
+| Tray idle, 60 s after start | 2.5 MB private working set (18 MB incl. shared DLLs), 0.000 s CPU |
 | After opening and closing the window | 4.0 MB private working set, webview processes gone |
-| UI script | 3.3 KB gzipped |
+| UI script | 3.5 KB gzipped |
