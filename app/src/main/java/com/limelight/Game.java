@@ -280,6 +280,13 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                         return true;
                     }
                 });
+        // The view can resize without a surface change (e.g. "Stretch video"); reset zoom to the new size.
+        streamView.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
+            if (r - l != or - ol || b - t != ob - ot) {
+                zoomPan.setContentSize(r - l, b - t);
+                applyZoom();
+            }
+        });
 
         // Listen for touch events on the background touch view to enable trackpad mode
         // to work on areas outside of the StreamView itself. We use a separate View
