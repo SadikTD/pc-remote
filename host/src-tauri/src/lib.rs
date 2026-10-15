@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod commands;
+pub mod host;
 pub mod input;
 pub mod power;
 pub mod proto;
@@ -8,8 +9,7 @@ pub mod sunshine;
 pub mod tls;
 pub mod win;
 
-use agent::{AgentHandle, BoxFut, Event, Handlers, InputSink};
-use proto::PcInfo;
+use agent::{AgentHandle, Event};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -25,46 +25,6 @@ pub struct App {
     pub agent: AgentHandle,
     pub sunshine: Arc<Sunshine>,
     pub fp: String,
-}
-
-/// The real agent handlers: Sunshine, SendInput, power.
-struct Host {
-    store: Arc<Mutex<Store>>,
-    sunshine: Arc<Sunshine>,
-}
-
-impl Handlers for Host {
-    fn pc_info(&self) -> BoxFut<PcInfo> {
-        let (sun, id) = (self.sunshine.clone(), self.store.lock().unwrap().pc_id().to_string());
-        Box::pin(async move {
-            let running = sun.status().await.running;
-            if !running {
-                // Event-driven recovery: a phone connected and Sunshine is down, so start it.
-                tokio::task::spawn_blocking(sunshine::start_service);
-            }
-            PcInfo {
-                id,
-                name: win::sys::pc_name(),
-                user: win::sys::user_name(),
-                macs: win::sys::adapters().1,
-                os: win::sys::os_name(),
-                sunshine: running,
-            }
-        })
-    }
-
-    fn submit_pin(&self, pin: String, name: String) -> BoxFut<bool> {
-        let sun = self.sunshine.clone();
-        Box::pin(async move { sun.submit_pin(&pin, &name).await.is_ok() })
-    }
-
-    fn input(&self) -> Box<dyn InputSink> {
-        Box::new(input::Input::new(input::SendInputEmitter))
-    }
-
-    fn power(&self, action: &str) -> Result<(), &'static str> {
-        power::power(action)
-    }
 }
 
 pub fn data_dir() -> PathBuf {
@@ -134,7 +94,7 @@ pub fn run() {
             let store = Arc::new(Mutex::new(Store::open(&dir)?));
             let sun = Arc::new(Sunshine::local(None));
             ensure_sunshine_creds(dir.clone(), sun.clone());
-            let host = Arc::new(Host { store: store.clone(), sunshine: sun.clone() });
+            let host = Arc::new(host::Host::new(store.clone(), sun.clone()));
             let agent = tauri::async_runtime::block_on(agent::Agent::start(
                 &identity,
                 store.clone(),

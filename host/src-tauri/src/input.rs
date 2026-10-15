@@ -133,12 +133,6 @@ impl<E: Emitter> Drop for Input<E> {
     }
 }
 
-impl<E: Emitter + Send> crate::agent::InputSink for Input<E> {
-    fn handle(&mut self, m: &ClientMsg) -> Result<(), &'static str> {
-        Input::handle(self, m)
-    }
-}
-
 /// Keys that need KEYEVENTF_EXTENDEDKEY to be told apart from their numpad/left twins.
 pub fn is_extended(vk: u16) -> bool {
     matches!(vk, 0x03 | 0x21..=0x28 | 0x2C..=0x2E | 0x5B..=0x5D | 0x6F | 0x90 | 0xA3 | 0xA5 | 0xA6..=0xB7)

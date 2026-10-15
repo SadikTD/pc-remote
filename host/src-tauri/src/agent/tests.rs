@@ -77,16 +77,42 @@ async fn recv(ws: &mut Ws) -> Option<Value> {
     }
 }
 
+async fn recv_bin(ws: &mut Ws) -> Vec<u8> {
+    loop {
+        match tokio::time::timeout(Duration::from_secs(3), ws.next()).await.expect("recv timed out") {
+            Some(Ok(Message::Binary(b))) => return b.to_vec(),
+            Some(Ok(Message::Text(_))) | Some(Ok(Message::Ping(_))) | Some(Ok(Message::Pong(_))) => {}
+            other => panic!("expected binary, got {other:?}"),
+        }
+    }
+}
+
 #[derive(Default)]
 struct Fake {
     pins: StdMutex<Vec<(String, String)>>,
     pin_ok: bool,
 }
 
-struct NoInput;
-impl InputSink for NoInput {
-    fn handle(&mut self, _: &ClientMsg) -> Result<(), &'static str> {
-        Ok(())
+/// Echoes what a real host session would do, minimally: power, a pushed binary frame, binary echo.
+struct FakeSession {
+    out: Outbox,
+}
+
+impl Session for FakeSession {
+    fn on_msg(&mut self, m: ClientMsg) -> Option<ServerMsg> {
+        match m {
+            ClientMsg::Power { a } if a == "lock" => Some(ServerMsg::Ok { of: "power".into() }),
+            ClientMsg::Power { .. } => Some(ServerMsg::error("bad_request", "x", Some("power"))),
+            ClientMsg::ThumbSub { on: true } => {
+                let out = self.out.clone();
+                tokio::spawn(async move { out.send_bin(vec![2, 0xFF, 0xD8]).await });
+                None
+            }
+            m => Some(ServerMsg::error("unsupported", "x", Some(m.t()))),
+        }
+    }
+    fn on_binary(&mut self, b: &[u8]) -> Option<ServerMsg> {
+        Some(ServerMsg::Ok { of: format!("bin:{}", b.len()) })
     }
 }
 
@@ -101,11 +127,11 @@ impl Handlers for Fake {
         let ok = self.pin_ok;
         Box::pin(async move { ok })
     }
-    fn input(&self) -> Box<dyn InputSink> {
-        Box::new(NoInput)
+    fn caps(&self) -> Vec<String> {
+        vec!["input".into(), "power".into(), "thumb".into()]
     }
-    fn power(&self, a: &str) -> Result<(), &'static str> {
-        if a == "lock" { Ok(()) } else { Err("bad_request") }
+    fn session(&self, _device: &str, out: Outbox) -> Box<dyn Session> {
+        Box::new(FakeSession { out })
     }
 }
 
@@ -272,4 +298,32 @@ async fn oversized_frame_before_auth_closes() {
     let mut ws = connect(r.handle.addr, &r.fp).await;
     let _ = ws.send(Message::text("x".repeat(MAX_FRAME + 1))).await;
     assert_eq!(recv(&mut ws).await, None);
+}
+
+#[tokio::test]
+async fn session_pushes_binary_and_receives_binary() {
+    let r = rig("bin", Duration::from_secs(30), true).await;
+    let (_, tok) = r.store.lock().unwrap().add_device("A").unwrap();
+    let mut ws = hello(&r, &tok).await;
+    let w = recv(&mut ws).await.unwrap();
+    assert_eq!(w["caps"], json!(["input", "power", "thumb"]));
+    send(&mut ws, json!({"t":"thumb.sub","on":true})).await;
+    assert_eq!(recv_bin(&mut ws).await, vec![2, 0xFF, 0xD8]);
+    ws.send(Message::binary(vec![1u8; 30])).await.unwrap();
+    assert_eq!(recv(&mut ws).await.unwrap()["of"], "bin:30");
+}
+
+#[tokio::test]
+async fn handle_sends_to_one_device() {
+    let r = rig("sendto", Duration::from_secs(30), true).await;
+    let (a_id, a_tok) = r.store.lock().unwrap().add_device("A").unwrap();
+    let (_, b_tok) = r.store.lock().unwrap().add_device("B").unwrap();
+    let mut a = hello(&r, &a_tok).await;
+    let mut b = hello(&r, &b_tok).await;
+    recv(&mut a).await;
+    recv(&mut b).await;
+    assert_eq!(r.handle.send(&a_id, ServerMsg::Ok { of: "hi".into() }), 1);
+    assert_eq!(recv(&mut a).await.unwrap()["of"], "hi");
+    send(&mut b, json!({"t":"ping"})).await;
+    assert_eq!(recv(&mut b).await.unwrap()["t"], "pong", "B got nothing extra");
 }
