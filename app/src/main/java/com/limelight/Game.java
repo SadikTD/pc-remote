@@ -92,7 +92,11 @@ import java.util.Locale;
 public class Game extends Activity implements SurfaceHolder.Callback,
         OnGenericMotionListener, OnTouchListener, NvConnectionListener, EvdevListener,
         OnSystemUiVisibilityChangeListener, GameGestures, StreamView.InputCallbacks,
-        PerfOverlayListener, UsbDriverService.UsbDriverStateListener, View.OnKeyListener {
+        PerfOverlayListener, UsbDriverService.UsbDriverStateListener, View.OnKeyListener,
+        com.pcremote.stream.ToolbarActions {
+
+    private final com.pcremote.stream.ToolbarState toolbarState = new com.pcremote.stream.ToolbarState();
+    private final com.pcremote.stream.PoorConnectionWatch poorWatch = new com.pcremote.stream.PoorConnectionWatch(10_000);
     private int lastButtonState = 0;
 
     // Only 2 touches are supported
@@ -520,16 +524,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         inputManager.registerInputDeviceListener(keyboardTranslator, null);
 
         // Initialize touch contexts
-        for (int i = 0; i < touchContextMap.length; i++) {
-            if (!prefConfig.touchscreenTrackpad) {
-                touchContextMap[i] = new AbsoluteTouchContext(conn, i, streamView);
-            }
-            else {
-                touchContextMap[i] = new RelativeTouchContext(conn, i,
-                        REFERENCE_HORIZ_RES, REFERENCE_VERT_RES,
-                        streamView, prefConfig);
-            }
-        }
+        initTouchContexts(prefConfig.touchscreenTrackpad);
 
         if (prefConfig.onscreenController) {
             // create virtual onscreen controller
@@ -539,6 +534,11 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             virtualController.refreshLayout();
             virtualController.show();
         }
+
+        // PC Remote toolbar overlay; its stats readout replaces the old text overlay
+        toolbarState.setTrackpad(prefConfig.touchscreenTrackpad);
+        performanceOverlayView.setAlpha(0f);
+        com.pcremote.stream.StreamToolbarHost.attach((FrameLayout) streamView.getParent(), toolbarState, this);
 
         if (prefConfig.usbDriver) {
             // Start the USB driver
@@ -561,6 +561,39 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         // The connection will be started when the surface gets created
         streamView.getHolder().addCallback(this);
     }
+
+    private void initTouchContexts(boolean trackpad) {
+        for (int i = 0; i < touchContextMap.length; i++) {
+            if (touchContextMap[i] != null) touchContextMap[i].cancelTouch();
+            touchContextMap[i] = trackpad
+                    ? new RelativeTouchContext(conn, i, REFERENCE_HORIZ_RES, REFERENCE_VERT_RES, streamView, prefConfig)
+                    : new AbsoluteTouchContext(conn, i, streamView);
+        }
+    }
+
+    @Override public void shortcut(com.pcremote.stream.Shortcut s) {
+        if (conn == null) return;
+        for (com.pcremote.stream.KeyEvt e : s.events()) {
+            conn.sendKeyboardInput(e.getKeyMap(), e.getDirection(), e.getModifiers(), (byte) 0);
+        }
+    }
+
+    @Override public void keyboard() { toggleKeyboard(); }
+
+    @Override public void setTrackpad(boolean on) {
+        prefConfig.touchscreenTrackpad = on;
+        initTouchContexts(on);
+    }
+
+    @Override public void lowerQuality() {
+        com.pcremote.quality.QualityPreset next = com.pcremote.quality.QualityPrefs.INSTANCE.current(this).stepDown();
+        com.pcremote.quality.QualityPrefs.INSTANCE.setAuto(this, false);
+        com.pcremote.quality.QualityPrefs.INSTANCE.apply(this, next, next.getBitrateKbps());
+        startActivity(new Intent(getIntent()).putExtra(EXTRA_RECONNECT_ATTEMPT, 0));
+        finish();
+    }
+
+    @Override public void disconnect() { finish(); }
 
     private void setPreferredOrientationForCurrentDisplay() {
         Display display = getWindowManager().getDefaultDisplay();
@@ -2372,6 +2405,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                             notificationOverlayView.setText(getString(R.string.pcr_reconnecting,
                                     attempt + 1, com.pcremote.stream.ReconnectPolicy.MAX_ATTEMPTS));
                             notificationOverlayView.setVisibility(View.VISIBLE);
+                            toolbarState.setLink(com.pcremote.stream.LinkState.RECONNECTING);
                             final Intent again = new Intent(getIntent()).putExtra(EXTRA_RECONNECT_ATTEMPT, attempt + 1);
                             new Handler(Looper.getMainLooper()).postDelayed(() -> {
                                 if (isFinishing()) return; // user backed out while waiting
@@ -2397,6 +2431,13 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
+                boolean poor = connectionStatus == MoonBridge.CONN_STATUS_POOR;
+                toolbarState.setLink(poor ? com.pcremote.stream.LinkState.POOR : com.pcremote.stream.LinkState.GOOD);
+                if (poorWatch.update(poor, android.os.SystemClock.uptimeMillis())
+                        && com.pcremote.quality.QualityPrefs.INSTANCE.current(Game.this) != com.pcremote.quality.QualityPreset.BATTERY) {
+                    toolbarState.setOfferLowerQuality(true);
+                }
+
                 if (prefConfig.disableWarnings) {
                     return;
                 }
@@ -2691,6 +2732,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             @Override
             public void run() {
                 performanceOverlayView.setText(text);
+                toolbarState.setPerfText(text);
             }
         });
     }
