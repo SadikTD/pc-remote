@@ -604,7 +604,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
     @Override public void lowerQuality() {
         com.pcremote.quality.QualityPreset next = com.pcremote.quality.QualityPrefs.INSTANCE.current(this).stepDown();
-        com.pcremote.quality.QualityPrefs.INSTANCE.setAuto(this, false);
+        if (com.pcremote.quality.QualityPrefs.INSTANCE.isAuto(this)) {
+            com.pcremote.quality.QualityPrefs.INSTANCE.setAuto(this, false);
+            Toast.makeText(getApplicationContext(), R.string.pcr_auto_off, Toast.LENGTH_LONG).show();
+        }
         com.pcremote.quality.QualityPrefs.INSTANCE.apply(this, next, next.getBitrateKbps());
         relaunchStream(0);
     }
