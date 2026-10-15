@@ -1,0 +1,28 @@
+:root {
+  --bg: #0b0d12;
+  --raised: #141821;
+  --raised-2: #1c2130;
+  --hairline: #ffffff14;
+  --accent: #7c8cff;
+  --live: #4fd1ff;
+  --ok: #3ddc97;
+  --warn: #ffc857;
+  --err: #ff5d73;
+  --text: #eef0f6;
+  --muted: #8a91a6;
+  --r-card: 24px;
+  --r-ctl: 16px;
+  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --font: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+  color: var(--text);
+  font: 14px/1.4 var(--font);
+  user-select: none;
+  overflow: hidden;
+}
