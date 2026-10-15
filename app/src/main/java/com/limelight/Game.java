@@ -2255,9 +2255,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         }
         else {
             // For the containing background view, we must subtract the origin
-            // of the StreamView to get video-relative coordinates.
-            eventX = event.getX(0) - streamView.getX();
-            eventY = event.getY(0) - streamView.getY();
+            // of the StreamView and undo any zoom to get video-relative coordinates.
+            // (StreamView's own events are already mapped through its scale/translation.)
+            eventX = zoomPan.toStreamX(event.getX(0) - streamView.getLeft());
+            eventY = zoomPan.toStreamY(event.getY(0) - streamView.getTop());
         }
 
         if (event.getPointerCount() == 1 && event.getActionIndex() == 0 &&
