@@ -159,7 +159,7 @@ class PcListActivity : ComponentActivity() {
     }
 
     private fun openSetupGuide() =
-        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/LizardByte/Sunshine/releases/latest")))
+        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/SadikTD/pc-remote/blob/main/docs/setup-sunshine.md")))
 
     private fun http(pc: ComputerDetails) = NvHTTP(ServerHelper.getCurrentAddressFromComputer(pc), pc.httpsPort,
         binder!!.uniqueId, pc.serverCert, PlatformBinding.getCryptoProvider(this))

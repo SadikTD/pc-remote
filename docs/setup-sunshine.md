@@ -1,6 +1,6 @@
 # Setting up your PC
 
-1. Download Sunshine for Windows from https://github.com/LizardByte/Sunshine/releases/latest (the `.exe` installer) and run it.
+1. Download Sunshine for Windows from https://github.com/SadikTD/Sunshine/releases/latest (`Sunshine-Windows-AMD64-installer.msi`) and run it.
 2. When the installer asks, allow it to add firewall rules.
 3. Open https://localhost:47990 on the PC and create a username and password.
 4. Make sure the PC and phone are on the same Wi-Fi (5 GHz is best; a cable to the PC is even better).
