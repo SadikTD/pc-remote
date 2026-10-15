@@ -303,4 +303,18 @@
     <string name="analogscroll_none">None (both sticks move the mouse)</string>
     <string name="analogscroll_right">Right analog stick</string>
     <string name="analogscroll_left">Left analog stick</string>
+    <string name="pcr_err_lost_title">Connection lost</string>
+    <string name="pcr_err_lost_msg">The connection to your PC dropped. Check that the PC is on and both devices are on the same Wi-Fi.</string>
+    <string name="pcr_err_no_video_title">No picture from the PC</string>
+    <string name="pcr_err_no_video_msg">Your PC is reachable but isn\'t sending video. Make sure Sunshine is running and your PC isn\'t locked on a secure screen (UAC prompt or login screen).</string>
+    <string name="pcr_err_blocked_title">Blocked by a firewall</string>
+    <string name="pcr_err_blocked_msg">Your PC\'s firewall or router is blocking the stream. Allow Sunshine through Windows Firewall (Sunshine\'s installer can do this), then retry.</string>
+    <string name="pcr_err_protected_title">Protected content</string>
+    <string name="pcr_err_protected_msg">The PC is showing protected content (for example a DRM video) that can\'t be streamed.</string>
+    <string name="pcr_err_start_title">Couldn\'t start streaming</string>
+    <string name="pcr_err_start_msg">Your PC didn\'t answer. Make sure Sunshine is installed and running on the PC. Need help? Open the setup guide from the PC list.</string>
+    <string name="pcr_err_decoder_title">Video decoder problem</string>
+    <string name="pcr_err_decoder_msg">Your phone couldn\'t start its video decoder. Retry. PC Remote switches to a safer video format automatically.</string>
+    <string name="pcr_retry">Retry</string>
+    <string name="pcr_close">Close</string>
 </resources>

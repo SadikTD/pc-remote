@@ -2248,6 +2248,22 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         }
     }
 
+    // Shows a friendly error with Retry (relaunch this stream) / Close.
+    void showFriendlyError(com.pcremote.stream.FriendlyError err, String technicalDetail) {
+        android.app.AlertDialog.Builder b = new android.app.AlertDialog.Builder(this)
+                .setTitle(err.getTitle())
+                .setMessage(getString(err.getMessage()) + "\n\n(" + technicalDetail + ")")
+                .setCancelable(false)
+                .setNegativeButton(R.string.pcr_close, (d, w) -> finish());
+        if (err.getRetryable()) {
+            b.setPositiveButton(R.string.pcr_retry, (d, w) -> {
+                startActivity(getIntent());
+                finish();
+            });
+        }
+        if (!isFinishing()) b.show();
+    }
+
     @Override
     public void stageFailed(final String stage, final int portFlags, final int errorCode) {
         // Perform a connection test if the failure could be due to a blocked port
@@ -2266,23 +2282,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                     displayedFailureDialog = true;
                     LimeLog.severe(stage + " failed: " + errorCode);
 
-                    // If video initialization failed and the surface is still valid, display extra information for the user
-                    if (stage.contains("video") && streamView.getHolder().getSurface().isValid()) {
-                        Toast.makeText(Game.this, getResources().getText(R.string.video_decoder_init_failed), Toast.LENGTH_LONG).show();
-                    }
-
-                    String dialogText = getResources().getString(R.string.conn_error_msg) + " " + stage +" (error "+errorCode+")";
-
-                    if (portFlags != 0) {
-                        dialogText += "\n\n" + getResources().getString(R.string.check_ports_msg) + "\n" +
-                                MoonBridge.stringifyPortFlags(portFlags, "\n");
-                    }
-
-                    if (portTestResult != MoonBridge.ML_TEST_RESULT_INCONCLUSIVE && portTestResult != 0)  {
-                        dialogText += "\n\n" + getResources().getString(R.string.nettest_text_blocked);
-                    }
-
-                    Dialog.displayDialog(Game.this, getResources().getString(R.string.conn_error_title), dialogText, true);
+                    boolean blocked = portTestResult != MoonBridge.ML_TEST_RESULT_INCONCLUSIVE && portTestResult != 0;
+                    showFriendlyError(com.pcremote.stream.ConnectionErrors.INSTANCE.forStageFailure(stage, blocked),
+                            stage + " error " + errorCode);
                 }
             }
         });
@@ -2315,53 +2317,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                     // Display the error dialog if it was an unexpected termination.
                     // Otherwise, just finish the activity immediately.
                     if (errorCode != MoonBridge.ML_ERROR_GRACEFUL_TERMINATION) {
-                        String message;
-
-                        if (portTestResult != MoonBridge.ML_TEST_RESULT_INCONCLUSIVE && portTestResult != 0) {
-                            // If we got a blocked result, that supersedes any other error message
-                            message = getResources().getString(R.string.nettest_text_blocked);
-                        }
-                        else {
-                            switch (errorCode) {
-                                case MoonBridge.ML_ERROR_NO_VIDEO_TRAFFIC:
-                                    message = getResources().getString(R.string.no_video_received_error);
-                                    break;
-
-                                case MoonBridge.ML_ERROR_NO_VIDEO_FRAME:
-                                    message = getResources().getString(R.string.no_frame_received_error);
-                                    break;
-
-                                case MoonBridge.ML_ERROR_UNEXPECTED_EARLY_TERMINATION:
-                                case MoonBridge.ML_ERROR_PROTECTED_CONTENT:
-                                    message = getResources().getString(R.string.early_termination_error);
-                                    break;
-
-                                case MoonBridge.ML_ERROR_FRAME_CONVERSION:
-                                    message = getResources().getString(R.string.frame_conversion_error);
-                                    break;
-
-                                default:
-                                    String errorCodeString;
-                                    // We'll assume large errors are hex values
-                                    if (Math.abs(errorCode) > 1000) {
-                                        errorCodeString = Integer.toHexString(errorCode);
-                                    }
-                                    else {
-                                        errorCodeString = Integer.toString(errorCode);
-                                    }
-                                    message = getResources().getString(R.string.conn_terminated_msg) + "\n\n" +
-                                            getResources().getString(R.string.error_code_prefix) + " " + errorCodeString;
-                                    break;
-                            }
-                        }
-
-                        if (portFlags != 0) {
-                            message += "\n\n" + getResources().getString(R.string.check_ports_msg) + "\n" +
-                                    MoonBridge.stringifyPortFlags(portFlags, "\n");
-                        }
-
-                        Dialog.displayDialog(Game.this, getResources().getString(R.string.conn_terminated_title),
-                                message, true);
+                        boolean blocked = portTestResult != MoonBridge.ML_TEST_RESULT_INCONCLUSIVE && portTestResult != 0;
+                        showFriendlyError(com.pcremote.stream.ConnectionErrors.INSTANCE.forTermination(errorCode, blocked),
+                                "error " + errorCode);
                     }
                     else {
                         finish();
