@@ -1,3 +1,5 @@
+pub mod tls;
+pub mod win;
 pub mod proto;
 
 use tauri::menu::{Menu, MenuItem};
