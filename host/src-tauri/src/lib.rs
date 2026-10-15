@@ -1,3 +1,4 @@
+pub mod power;
 pub mod input;
 pub mod sunshine;
 pub mod agent;
