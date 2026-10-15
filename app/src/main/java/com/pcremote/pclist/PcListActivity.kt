@@ -9,7 +9,7 @@ import android.os.IBinder
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -33,6 +33,7 @@ import com.limelight.nvstream.http.PairingManager
 import com.limelight.nvstream.wol.WakeOnLanSender
 import com.limelight.preferences.AddComputerManually
 import com.limelight.utils.ServerHelper
+import com.limelight.utils.UiHelper
 import com.pcremote.quality.LinkAdvisor
 import com.pcremote.quality.QualityPrefs
 import com.pcremote.quality.WifiHint
@@ -106,10 +107,12 @@ class PcListActivity : ComponentActivity() {
         }
     }
 
+    @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
     @Composable
     private fun PcRow(pc: ComputerDetails) {
         val action = PcListLogic.actionFor(pc.state, pc.pairState, pc.macAddress != null)
-        ListItem(
+        var menu by remember { mutableStateOf(false) }
+        Box { ListItem(
             headlineContent = { Text(pc.name ?: "PC") },
             supportingContent = { Text(pc.activeAddress?.address ?: "") },
             leadingContent = { Icon(Icons.Default.Computer, null) },
@@ -123,8 +126,23 @@ class PcListActivity : ComponentActivity() {
                 }
                 Button({ onAction(pc, action) }, enabled = action != PcAction.CHECKING) { Text(stringResource(label)) }
             },
-            modifier = Modifier.clickable(enabled = action != PcAction.CHECKING) { onAction(pc, action) },
+            modifier = Modifier.combinedClickable(onLongClick = { menu = true }) {
+                if (action != PcAction.CHECKING) onAction(pc, action)
+            },
         )
+        DropdownMenu(menu, { menu = false }) {
+            DropdownMenuItem(text = { Text(stringResource(R.string.pcr_remove_pc)) }, onClick = {
+                menu = false
+                UiHelper.displayDeletePcConfirmationDialog(this@PcListActivity, pc, { removePc(pc) }, null)
+            })
+        } }
+    }
+
+    // Forgets the PC and its pairing on this phone; it reappears unpaired if discovered again.
+    private fun removePc(pc: ComputerDetails) {
+        val b = binder ?: return
+        b.removeComputer(pc)
+        pcs.remove(pc.uuid)
     }
 
     private fun onAction(pc: ComputerDetails, action: PcAction) {

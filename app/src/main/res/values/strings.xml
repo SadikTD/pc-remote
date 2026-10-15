@@ -344,6 +344,7 @@
     <string name="pcr_hint_weak">Weak Wi-Fi signal. Move closer to the router, or connect your PC with a cable, for a smoother stream.</string>
     <string name="pcr_pc_unreachable">Can\'t reach your PC. Make sure it\'s on, awake, and Sunshine is running, then try again.</string>
     <string name="pcr_offline">Offline · Help</string>
+    <string name="pcr_remove_pc">Remove PC</string>
     <string name="pcr_auto_off">Automatic quality turned off. Turn it back on in Settings.</string>
     <string name="pcr_tb_lower_quality">Lower quality for smoother stream</string>
     <string name="pcr_tb_previous">Previous</string>
