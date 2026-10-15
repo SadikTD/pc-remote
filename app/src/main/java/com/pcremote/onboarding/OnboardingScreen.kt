@@ -8,6 +8,8 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -33,9 +35,15 @@ import com.pcremote.ui.theme.LocalMidnight
 import kotlinx.coroutines.launch
 
 /** Opens the Play-services QR scanner (no camera permission, no bundled model). */
-fun scanQr(ctx: android.content.Context, onResult: (String) -> Unit) {
-    val opts = GmsBarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build()
-    GmsBarcodeScanning.getClient(ctx, opts).startScan().addOnSuccessListener { b -> b.rawValue?.let(onResult) }
+fun scanQr(ctx: android.content.Context, onUnavailable: () -> Unit = {}, onResult: (String) -> Unit) {
+    val opts = GmsBarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).enableAutoZoom().build()
+    GmsBarcodeScanning.getClient(ctx, opts).startScan()
+        .addOnSuccessListener { b -> b.rawValue?.let(onResult) }
+        .addOnFailureListener {
+            // No Play services scanner (or it's still downloading): explain and offer manual pairing
+            android.widget.Toast.makeText(ctx, R.string.pcr_scanner_unavailable, android.widget.Toast.LENGTH_LONG).show()
+            onUnavailable()
+        }
 }
 
 @Composable
@@ -48,7 +56,7 @@ fun OnboardingScreen(model: PairingModel, onDone: (String) -> Unit, onManual: ()
 
     LaunchedEffect(state) { (state as? PairingState.Done)?.let { onDone(it.pcId) } }
 
-    fun scan() = scanQr(ctx) { raw -> scope.launch { model.onScanned(raw) } }
+    fun scan() = scanQr(ctx, onUnavailable = onManual) { raw -> scope.launch { model.onScanned(raw) } }
 
     Box(Modifier.fillMaxSize().background(c.bg)) {
         Aurora()
@@ -93,7 +101,9 @@ fun OnboardingScreen(model: PairingModel, onDone: (String) -> Unit, onManual: ()
 @Composable
 private fun Step(icon: ImageVector, title: Int, body: Int, extra: @Composable ColumnScope.() -> Unit = {}) {
     val c = LocalMidnight.current
-    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+    // Scrolls when large text or landscape doesn't fit; centred otherwise
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    Column(Modifier.verticalScroll(rememberScrollState()).padding(vertical = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             Modifier.size(112.dp).clip(CircleShape)
                 .background(Brush.linearGradient(listOf(c.accent.copy(alpha = 0.25f), c.accent2.copy(alpha = 0.15f)))),
@@ -106,9 +116,11 @@ private fun Step(icon: ImageVector, title: Int, body: Int, extra: @Composable Co
             modifier = Modifier.widthIn(max = 360.dp))
         extra()
     }
+    }
 }
 
 /** Full-screen glass state for pairing progress and errors. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PairingOverlay(state: PairingState, onRetry: () -> Unit, onDismiss: () -> Unit) {
     val c = LocalMidnight.current
@@ -128,7 +140,7 @@ fun PairingOverlay(state: PairingState, onRetry: () -> Unit, onDismiss: () -> Un
                         Spacer(Modifier.height(12.dp))
                         Text(stringResource(s.message), style = MaterialTheme.typography.bodyLarge, color = c.text)
                         Spacer(Modifier.height(20.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             PrimaryButton(stringResource(R.string.pcr_try_again), onRetry)
                             GhostButton(stringResource(R.string.pcr_close), onDismiss)
                         }

@@ -129,14 +129,14 @@ class MainActivity : ComponentActivity() {
                                     PrimaryAction.CHECKING -> Unit
                                 }
                             },
-                            addPc = { scanQr(this@MainActivity) { raw -> scope.launch { pairing.onScanned(raw) } } },
+                            addPc = { scanQr(this@MainActivity, onUnavailable = ::manualPairing) { raw -> scope.launch { pairing.onScanned(raw) } } },
                             settings = { nav.navigate(Routes.SETTINGS) },
                             refresh = { home.stop(); home.start() },
                             rename = { card, name -> home.rename(card.id, name) },
                             remove = { card -> home.remove(card) },
                         ))
                         PairingOverlay(pairState,
-                            onRetry = { pairing.reset(); scanQr(this@MainActivity) { raw -> scope.launch { pairing.onScanned(raw) } } },
+                            onRetry = { pairing.reset(); scanQr(this@MainActivity, onUnavailable = ::manualPairing) { raw -> scope.launch { pairing.onScanned(raw) } } },
                             onDismiss = pairing::reset)
                     }
                 }
