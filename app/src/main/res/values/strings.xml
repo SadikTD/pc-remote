@@ -474,4 +474,10 @@
     <string name="pcr_share_no_pc">Pair a PC in PC Remote first.</string>
     <string name="pcr_share_choose">Send to which PC?</string>
     <string name="pcr_share_label">Send to PC</string>
+    <string name="pcr_pw_lock">Lock</string>
+    <string name="pcr_pw_sleep">Sleep</string>
+    <string name="pcr_pw_restart">Restart</string>
+    <string name="pcr_pw_shutdown">Shut down</string>
+    <string name="pcr_pw_signout">Sign out</string>
+    <string name="pcr_pw_tap_again">Tap again to confirm</string>
 </resources>

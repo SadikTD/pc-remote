@@ -62,6 +62,7 @@ class HomeActions(
     val refresh: () -> Unit,
     val rename: (PcCardUi, String) -> Unit,
     val remove: (PcCardUi) -> Unit,
+    val send: (PcCardUi, com.pcremote.agent.Msg) -> Unit = { _, _ -> },
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -200,6 +201,8 @@ private fun PcSheet(card: PcCardUi, a: HomeActions, onDismiss: () -> Unit) {
     var renaming by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf(card.name) }
     var confirmRemove by remember { mutableStateOf(false) }
+    var power by remember { mutableStateOf(false) }
+    if (power) { com.pcremote.modes.PowerSheet(card.name, { a.send(card, it) }) { power = false; onDismiss() }; return }
     ModalBottomSheet(onDismiss, containerColor = c.surface) {
         Column(Modifier.padding(24.dp, 0.dp, 24.dp, 32.dp)) {
             Text(card.name, color = c.text, style = MaterialTheme.typography.titleLarge)
@@ -209,6 +212,7 @@ private fun PcSheet(card: PcCardUi, a: HomeActions, onDismiss: () -> Unit) {
                 Spacer(Modifier.height(12.dp))
                 PrimaryButton(stringResource(R.string.pcr_save), { a.rename(card, name.trim().ifEmpty { card.name }); onDismiss() })
             } else {
+                if (!card.legacy && card.online) SheetRow(Icons.Rounded.PowerSettingsNew, R.string.pcr_power) { power = true }
                 if (!card.legacy) SheetRow(Icons.Rounded.Edit, R.string.pcr_rename) { renaming = true }
                 SheetRow(Icons.Rounded.DeleteOutline, if (confirmRemove) R.string.pcr_remove_confirm else R.string.pcr_remove, danger = true) {
                     if (confirmRemove) { a.remove(card); onDismiss() } else confirmRemove = true

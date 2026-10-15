@@ -151,6 +151,7 @@ class MainActivity : ComponentActivity() {
                             refresh = { home.stop(); home.start() },
                             rename = { card, name -> home.rename(card.id, name) },
                             remove = { card -> home.remove(card) },
+                            send = { card, m -> home.connection(card.id)?.send(m) },
                         ))
                         PairingOverlay(pairState,
                             onRetry = { pairing.reset(); scanQr(this@MainActivity, onUnavailable = ::manualPairing) { raw -> scope.launch { pairing.onScanned(raw) } } },
