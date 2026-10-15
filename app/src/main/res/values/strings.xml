@@ -463,4 +463,15 @@
     <string name="pcr_pad_racing">Racing</string>
     <string name="pcr_pad_shooter">Shooter</string>
     <string name="pcr_pad_minimal">Minimal</string>
+    <string name="pcr_files_send">Send files to your PC</string>
+    <string name="pcr_files_send_desc">Photos, videos, documents. They land in your PC\'s Downloads › PC Remote folder.</string>
+    <string name="pcr_files_recent">Transfers</string>
+    <string name="pcr_files_sent">Sent</string>
+    <string name="pcr_files_saved">Saved to Downloads/PC Remote</string>
+    <string name="pcr_files_failed">Failed</string>
+    <string name="pcr_files_sending">Sending…</string>
+    <string name="pcr_files_receiving">Receiving…</string>
+    <string name="pcr_share_no_pc">Pair a PC in PC Remote first.</string>
+    <string name="pcr_share_choose">Send to which PC?</string>
+    <string name="pcr_share_label">Send to PC</string>
 </resources>
