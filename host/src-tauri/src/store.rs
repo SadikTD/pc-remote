@@ -64,9 +64,6 @@ struct Data {
     devices: Vec<Device>,
     #[serde(default)]
     config: Config,
-    /// DPAPI-wrapped Sunshine admin credentials, base64.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    sunshine_creds: Option<String>,
 }
 
 pub struct Store {
@@ -93,7 +90,7 @@ impl Store {
         let data = match std::fs::read(&path) {
             Ok(b) => serde_json::from_slice(&b).map_err(std::io::Error::other)?,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                Data { pc_id: uuid4(), devices: vec![], config: Config::default(), sunshine_creds: None }
+                Data { pc_id: uuid4(), devices: vec![], config: Config::default() }
             }
             Err(e) => return Err(e),
         };
@@ -180,15 +177,6 @@ impl Store {
 
     pub fn set_config(&mut self, c: Config) -> std::io::Result<()> {
         self.data.config = c;
-        self.save()
-    }
-
-    pub fn sunshine_creds(&self) -> Option<&str> {
-        self.data.sunshine_creds.as_deref()
-    }
-
-    pub fn set_sunshine_creds(&mut self, wrapped_b64: String) -> std::io::Result<()> {
-        self.data.sunshine_creds = Some(wrapped_b64);
         self.save()
     }
 }

@@ -1,3 +1,4 @@
+pub mod sunshine;
 pub mod agent;
 pub mod store;
 pub mod tls;
