@@ -4,7 +4,7 @@ use crate::agent::{BoxFut, Handlers, Outbox, Session};
 use crate::proto::{ClientMsg, PcInfo, ServerMsg};
 use crate::store::Store;
 use crate::sunshine::{self, Sunshine};
-use crate::{input, power, win};
+use crate::{input, media, power, win};
 use std::sync::{Arc, Mutex};
 
 pub struct Host {
@@ -44,16 +44,34 @@ impl Handlers for Host {
     }
 
     fn caps(&self) -> Vec<String> {
-        ["input", "power"].map(String::from).to_vec()
+        ["input", "power", "media"].map(String::from).to_vec()
     }
 
-    fn session(&self, _device: &str, _out: Outbox) -> Box<dyn Session> {
-        Box::new(HostSession { input: input::Input::new(input::SendInputEmitter) })
+    fn session(&self, _device: &str, out: Outbox) -> Box<dyn Session> {
+        Box::new(HostSession { input: input::Input::new(input::SendInputEmitter), out, media: None })
     }
 }
 
 pub struct HostSession {
     input: input::Input<input::SendInputEmitter>,
+    out: Outbox,
+    media: Option<tokio::task::JoinHandle<()>>,
+}
+
+/// Starts or stops a per-session subscription task.
+fn toggle(slot: &mut Option<tokio::task::JoinHandle<()>>, on: bool, start: impl FnOnce() -> tokio::task::JoinHandle<()>) {
+    if let Some(t) = slot.take() {
+        t.abort();
+    }
+    if on {
+        *slot = Some(start());
+    }
+}
+
+impl Drop for HostSession {
+    fn drop(&mut self) {
+        toggle(&mut self.media, false, || unreachable!());
+    }
 }
 
 impl Session for HostSession {
@@ -69,6 +87,18 @@ impl Session for HostSession {
             ClientMsg::Power { a } => match power::power(&a) {
                 Ok(()) => Some(ServerMsg::Ok { of: of.into() }),
                 Err(c) => err(c, "power action failed"),
+            },
+            ClientMsg::MediaSub { on } => {
+                let out = self.out.clone();
+                toggle(&mut self.media, on, || media::subscribe(out));
+                None
+            }
+            ClientMsg::MediaCmd { c, v } => match media::Cmd::parse(&c, v) {
+                Ok(cmd) => {
+                    tokio::task::spawn_blocking(move || media::run(cmd));
+                    None
+                }
+                Err(code) => err(code, "unknown media command"),
             },
             _ => err("unsupported", "not supported by this PC yet"),
         }

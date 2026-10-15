@@ -32,7 +32,7 @@ tokio = { version = "1.53.3", features = ["rt-multi-thread", "net", "macros", "t
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring", "tls12", "logging"] }
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["handshake"] }
 window-vibrancy = "0.8.1"
-windows = { version = "0.62", features = ["Win32_Foundation", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock", "Win32_Security_Cryptography", "Win32_System_Power", "Win32_System_Registry", "Win32_System_Shutdown", "Win32_System_Threading", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell"] }
+windows = { version = "0.62", features = ["Foundation", "Media_Control", "Win32_Foundation", "Win32_Media_Audio", "Win32_Media_Audio_Endpoints", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock", "Win32_Security_Cryptography", "Win32_System_Com", "Win32_System_Power", "Win32_System_Registry", "Win32_System_Shutdown", "Win32_System_Threading", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell"] }
 
 [profile.release]
 opt-level = "s"

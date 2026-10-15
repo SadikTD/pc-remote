@@ -61,7 +61,8 @@ pub(crate) async fn run(tcp: TcpStream, acceptor: tokio_rustls::TlsAcceptor, ctx
         match next_frame(&mut ws, ctx.idle).await {
             None => return,
             Some(Frame::Text(t)) => break serde_json::from_str::<ClientMsg>(&t).ok(),
-            Some(_) => break None,
+            Some(Frame::Other) => continue,
+            Some(Frame::Bin(_)) => break None,
         }
     };
     let (tx, mut rx) = mpsc::unbounded_channel();

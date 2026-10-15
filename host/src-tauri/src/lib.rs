@@ -2,6 +2,7 @@ pub mod agent;
 pub mod commands;
 pub mod host;
 pub mod input;
+pub mod media;
 pub mod power;
 pub mod proto;
 pub mod store;
