@@ -1168,6 +1168,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
         SpinnerDialog.closeDialogs(this);
         Dialog.closeDialogs();
+        if (friendlyErrorDialog != null) {
+            friendlyErrorDialog.dismiss();
+            friendlyErrorDialog = null;
+        }
 
         if (virtualController != null) {
             virtualController.hide();
@@ -2359,6 +2363,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     }
 
     // Shows a friendly error with Retry (relaunch this stream) / Close.
+    private android.app.AlertDialog friendlyErrorDialog;
+
     void showFriendlyError(com.pcremote.stream.FriendlyError err, String technicalDetail) {
         android.app.AlertDialog.Builder b = new android.app.AlertDialog.Builder(this)
                 .setTitle(err.getTitle())
@@ -2368,7 +2374,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         if (err.getRetryable()) {
             b.setPositiveButton(R.string.pcr_retry, (d, w) -> relaunchStream(0));
         }
-        if (!isFinishing()) b.show();
+        if (!isFinishing()) friendlyErrorDialog = b.show();
     }
 
     @Override
