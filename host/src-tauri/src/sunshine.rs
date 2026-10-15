@@ -29,7 +29,7 @@ pub struct SunshineStatus {
 pub struct Sunshine {
     base: String,
     http: reqwest::Client,
-    creds: Option<(String, String)>,
+    creds: std::sync::RwLock<Option<(String, String)>>,
     pub retry: Duration,
     pub pin_timeout: Duration,
 }
@@ -90,12 +90,17 @@ impl Sunshine {
             .timeout(Duration::from_secs(3))
             .build()
             .expect("http client");
-        Sunshine { base: base.trim_end_matches('/').into(), http, creds, retry: Duration::from_millis(500), pin_timeout: Duration::from_secs(30) }
+        Sunshine { base: base.trim_end_matches('/').into(), http, creds: creds.into(), retry: Duration::from_millis(500), pin_timeout: Duration::from_secs(30) }
+    }
+
+    /// Credentials can arrive after startup (the elevated first-run fallback).
+    pub fn set_creds(&self, c: (String, String)) {
+        *self.creds.write().unwrap() = Some(c);
     }
 
     fn req(&self, m: reqwest::Method, p: &str) -> reqwest::RequestBuilder {
         let r = self.http.request(m, format!("{}{p}", self.base));
-        match &self.creds {
+        match &*self.creds.read().unwrap() {
             Some((u, pw)) => r.basic_auth(u, Some(pw)),
             None => r,
         }
@@ -217,6 +222,19 @@ mod tests {
         Mock::given(method("POST")).and(path("/api/restart"))
             .respond_with(ResponseTemplate::new(200)).expect(1).mount(&srv).await;
         assert_eq!(client(&srv.uri()).set_config("upnp", "enabled").await, Ok(()));
+    }
+
+    #[tokio::test]
+    async fn creds_set_after_start_are_used() {
+        let srv = MockServer::start().await;
+        Mock::given(method("POST")).and(path("/api/pin")).and(basic_auth("late", "pw"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"status":true})))
+            .mount(&srv).await;
+        let mut s = Sunshine::new(&srv.uri(), None);
+        s.pin_timeout = Duration::from_millis(100);
+        assert_eq!(s.submit_pin("1", "x").await, Err(SunshineError::PinTimeout));
+        s.set_creds(("late".into(), "pw".into()));
+        assert_eq!(s.submit_pin("1", "x").await, Ok(()));
     }
 
     #[test]

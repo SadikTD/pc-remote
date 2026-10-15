@@ -1,15 +1,75 @@
-pub mod power;
-pub mod input;
-pub mod sunshine;
 pub mod agent;
+pub mod commands;
+pub mod input;
+pub mod power;
+pub mod proto;
 pub mod store;
+pub mod sunshine;
 pub mod tls;
 pub mod win;
-pub mod proto;
 
+use agent::{AgentHandle, BoxFut, Event, Handlers, InputSink};
+use proto::PcInfo;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use store::Store;
+use sunshine::Sunshine;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter as _, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
+
+/// Shared state for the Tauri commands.
+pub struct App {
+    pub store: Arc<Mutex<Store>>,
+    pub agent: AgentHandle,
+    pub sunshine: Arc<Sunshine>,
+    pub fp: String,
+}
+
+/// The real agent handlers: Sunshine, SendInput, power.
+struct Host {
+    store: Arc<Mutex<Store>>,
+    sunshine: Arc<Sunshine>,
+}
+
+impl Handlers for Host {
+    fn pc_info(&self) -> BoxFut<PcInfo> {
+        let (sun, id) = (self.sunshine.clone(), self.store.lock().unwrap().pc_id().to_string());
+        Box::pin(async move {
+            let running = sun.status().await.running;
+            if !running {
+                // Event-driven recovery: a phone connected and Sunshine is down, so start it.
+                tokio::task::spawn_blocking(sunshine::start_service);
+            }
+            PcInfo {
+                id,
+                name: win::sys::pc_name(),
+                user: win::sys::user_name(),
+                macs: win::sys::adapters().1,
+                os: win::sys::os_name(),
+                sunshine: running,
+            }
+        })
+    }
+
+    fn submit_pin(&self, pin: String, name: String) -> BoxFut<bool> {
+        let sun = self.sunshine.clone();
+        Box::pin(async move { sun.submit_pin(&pin, &name).await.is_ok() })
+    }
+
+    fn input(&self) -> Box<dyn InputSink> {
+        Box::new(input::Input::new(input::SendInputEmitter))
+    }
+
+    fn power(&self, action: &str) -> Result<(), &'static str> {
+        power::power(action)
+    }
+}
+
+pub fn data_dir() -> PathBuf {
+    PathBuf::from(std::env::var("APPDATA").unwrap_or_else(|_| ".".into())).join("PC Remote")
+}
 
 /// Shows the main window, creating its webview if it was destroyed on close.
 pub fn show_window(app: &AppHandle) {
@@ -33,14 +93,61 @@ pub fn show_window(app: &AppHandle) {
     }
 }
 
+/// Normally the installer created the credentials. If not, try once more off the UI
+/// thread, elevating (UAC) only when needed, so startup never blocks on the prompt.
+fn ensure_sunshine_creds(dir: PathBuf, sun: Arc<Sunshine>) {
+    if let Some(c) = sunshine::load_creds(&dir) {
+        return sun.set_creds(c);
+    }
+    std::thread::spawn(move || {
+        let c = sunshine::ensure_credentials(&dir)
+            .ok()
+            .or_else(|| win::sys::run_elevated("--init-sunshine").then(|| sunshine::load_creds(&dir)).flatten());
+        if let Some(c) = c {
+            sun.set_creds(c);
+        }
+    });
+}
+
 pub fn run() {
+    let dir = data_dir();
+    if std::env::args().any(|a| a == "--init-sunshine") {
+        // Run elevated by the installer (or by us on first launch): creates Sunshine credentials.
+        std::process::exit(if sunshine::ensure_credentials(&dir).is_ok() { 0 } else { 1 });
+    }
     let hidden = std::env::args().any(|a| a == "--hidden");
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _, _| show_window(app)))
+        .invoke_handler(tauri::generate_handler![
+            commands::get_state,
+            commands::new_qr,
+            commands::revoke,
+            commands::rename,
+            commands::get_config,
+            commands::set_config,
+            commands::open_files_dir,
+            commands::check_update,
+            commands::open_release,
+        ])
         .setup(move |app| {
+            let identity = tls::Identity::load_or_create(&dir)?;
+            let store = Arc::new(Mutex::new(Store::open(&dir)?));
+            let sun = Arc::new(Sunshine::local(None));
+            ensure_sunshine_creds(dir.clone(), sun.clone());
+            let host = Arc::new(Host { store: store.clone(), sunshine: sun.clone() });
+            let agent = tauri::async_runtime::block_on(agent::Agent::start(
+                &identity,
+                store.clone(),
+                host,
+                "0.0.0.0:47999".parse().unwrap(),
+                Duration::from_secs(30),
+            ))?;
+            let mut events = agent.events();
+            app.manage(App { store, agent: agent.clone(), sunshine: sun, fp: identity.fingerprint_hex.clone() });
+
             let open = MenuItem::with_id(app, "open", "Open", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            TrayIconBuilder::with_id("tray")
+            let tray = TrayIconBuilder::with_id("tray")
                 .icon(app.default_window_icon().cloned().expect("icon"))
                 .tooltip("PC Remote")
                 .menu(&Menu::with_items(app, &[&open, &quit])?)
@@ -51,16 +158,25 @@ pub fn run() {
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, e| {
-                    if let TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    } = e
-                    {
+                    if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = e {
                         show_window(tray.app_handle());
                     }
                 })
                 .build(app)?;
+
+            // Agent events → tray tooltip and the window (if open). No polling.
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                while let Ok(e) = events.recv().await {
+                    let tip = match agent.connected().len() {
+                        0 => "PC Remote".to_string(),
+                        1 => "PC Remote · 1 phone connected".to_string(),
+                        n => format!("PC Remote · {n} phones connected"),
+                    };
+                    let _ = tray.set_tooltip(Some(tip));
+                    let _ = handle.emit(if matches!(e, Event::Paired { .. }) { "paired" } else { "devices" }, ());
+                }
+            });
             if !hidden {
                 show_window(app.handle());
             }

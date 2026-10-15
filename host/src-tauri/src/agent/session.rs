@@ -33,6 +33,7 @@ async fn next_text(ws: &mut Ws, idle: std::time::Duration) -> Option<Option<Stri
 
 pub(crate) async fn run(tcp: TcpStream, acceptor: tokio_rustls::TlsAcceptor, ctx: Arc<Ctx>) {
     let Ok(Ok(tls)) = timeout(ctx.idle, acceptor.accept(tcp)).await else { return };
+    #[allow(clippy::result_large_err)] // signature fixed by tungstenite
     let only_v1 = |req: &Request, resp: Response| -> Result<Response, ErrorResponse> {
         if req.uri().path() == "/v1" {
             Ok(resp)
