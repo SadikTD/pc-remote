@@ -598,8 +598,16 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         com.pcremote.quality.QualityPreset next = com.pcremote.quality.QualityPrefs.INSTANCE.current(this).stepDown();
         com.pcremote.quality.QualityPrefs.INSTANCE.setAuto(this, false);
         com.pcremote.quality.QualityPrefs.INSTANCE.apply(this, next, next.getBitrateKbps());
-        startActivity(new Intent(getIntent()).putExtra(EXTRA_RECONNECT_ATTEMPT, 0));
+        relaunchStream(0);
+    }
+
+    // Game is singleTask: starting it from a live instance only delivers onNewIntent, and the
+    // finish() that follows would kill the stream. Finish first so a fresh instance is created.
+    private void relaunchStream(int attempt) {
+        Intent again = new Intent(getIntent()).putExtra(EXTRA_RECONNECT_ATTEMPT, attempt);
         finish();
+        startActivity(again);
+        overridePendingTransition(0, 0);
     }
 
     @Override public void disconnect() { finish(); }
@@ -2347,10 +2355,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                 .setCancelable(false)
                 .setNegativeButton(R.string.pcr_close, (d, w) -> finish());
         if (err.getRetryable()) {
-            b.setPositiveButton(R.string.pcr_retry, (d, w) -> {
-                startActivity(new Intent(getIntent()).putExtra(EXTRA_RECONNECT_ATTEMPT, 0));
-                finish();
-            });
+            b.setPositiveButton(R.string.pcr_retry, (d, w) -> relaunchStream(0));
         }
         if (!isFinishing()) b.show();
     }
@@ -2415,12 +2420,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                                     attempt + 1, com.pcremote.stream.ReconnectPolicy.MAX_ATTEMPTS));
                             notificationOverlayView.setVisibility(View.VISIBLE);
                             toolbarState.setLink(com.pcremote.stream.LinkState.RECONNECTING);
-                            final Intent again = new Intent(getIntent()).putExtra(EXTRA_RECONNECT_ATTEMPT, attempt + 1);
-                            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                            pcrHandler.postDelayed(() -> {
                                 if (isFinishing()) return; // user backed out while waiting
-                                startActivity(again);
-                                finish();
-                                overridePendingTransition(0, 0);
+                                relaunchStream(attempt + 1);
                             }, com.pcremote.stream.ReconnectPolicy.INSTANCE.delayMs(attempt));
                             return;
                         }
