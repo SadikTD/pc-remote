@@ -13,9 +13,18 @@ class PcListLogicTest {
         assertEquals(PcAction.CONNECT, PcListLogic.actionFor(State.ONLINE, PairState.PAIRED, true))
         assertEquals(PcAction.PAIR, PcListLogic.actionFor(State.ONLINE, PairState.NOT_PAIRED, true))
         assertEquals(PcAction.WAKE, PcListLogic.actionFor(State.OFFLINE, PairState.PAIRED, true))
-        assertEquals(PcAction.CHECKING, PcListLogic.actionFor(State.OFFLINE, null, false))
         assertEquals(PcAction.CHECKING, PcListLogic.actionFor(State.UNKNOWN, null, true))
         assertEquals(PcAction.CHECKING, PcListLogic.actionFor(null, null, true)) // not polled yet
+    }
+
+    @Test fun `offline pc with no MAC offers setup help instead of a dead button`() {
+        assertEquals(PcAction.OFFLINE, PcListLogic.actionFor(State.OFFLINE, null, false))
+    }
+
+    @Test fun `connect failure is unreachable, empty list is no apps`() {
+        assertEquals(R.string.pcr_pc_unreachable, PcListLogic.connectProblem(null))
+        assertEquals(R.string.pcr_no_apps, PcListLogic.connectProblem(emptyList()))
+        assertNull(PcListLogic.connectProblem(listOf(NvApp("Desktop", 1, false))))
     }
 
     @Test fun `picks Desktop case-insensitively`() {

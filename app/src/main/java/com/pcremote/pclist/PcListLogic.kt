@@ -6,17 +6,25 @@ import com.limelight.nvstream.http.ComputerDetails
 import com.limelight.nvstream.http.NvApp
 import com.limelight.nvstream.http.PairingManager.PairState
 
-enum class PcAction { CONNECT, PAIR, WAKE, CHECKING }
+enum class PcAction { CONNECT, PAIR, WAKE, OFFLINE, CHECKING }
 
 object PcListLogic {
     fun actionFor(state: ComputerDetails.State?, pair: PairState?, hasMac: Boolean): PcAction = when (state) {
         ComputerDetails.State.ONLINE -> if (pair == PairState.PAIRED) PcAction.CONNECT else PcAction.PAIR
-        ComputerDetails.State.OFFLINE -> if (hasMac) PcAction.WAKE else PcAction.CHECKING
+        ComputerDetails.State.OFFLINE -> if (hasMac) PcAction.WAKE else PcAction.OFFLINE
         else -> PcAction.CHECKING
     }
 
     fun pickDesktop(apps: List<NvApp>): NvApp? =
         apps.firstOrNull { it.appName.equals("Desktop", ignoreCase = true) } ?: apps.firstOrNull()
+
+    /** [apps] is null when fetching the app list failed. Returns null when there's something to launch. */
+    @StringRes
+    fun connectProblem(apps: List<NvApp>?): Int? = when {
+        apps == null -> R.string.pcr_pc_unreachable
+        apps.isEmpty() -> R.string.pcr_no_apps
+        else -> null
+    }
 
     /** null = success (no message). A null state means the PC dropped mid-pair (exception). */
     @StringRes

@@ -342,4 +342,6 @@
     <string name="pcr_no_apps">Sunshine has no apps to stream. Add the \"Desktop\" app in Sunshine → Applications.</string>
     <string name="pcr_hint_24">You\'re on 2.4 GHz Wi-Fi. Switch your phone to your router\'s 5 GHz network for a much smoother stream.</string>
     <string name="pcr_hint_weak">Weak Wi-Fi signal. Move closer to the router, or connect your PC with a cable, for a smoother stream.</string>
+    <string name="pcr_pc_unreachable">Can\'t reach your PC. Make sure it\'s on, awake, and Sunshine is running, then try again.</string>
+    <string name="pcr_offline">Offline · Help</string>
 </resources>

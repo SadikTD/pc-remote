@@ -71,8 +71,7 @@ class PcListActivity : ComponentActivity() {
     private fun Screen() {
         Scaffold(topBar = {
             TopAppBar(title = { Text(stringResource(R.string.pcr_pc_list_title)) }, actions = {
-                IconButton({ startActivity(Intent(Intent.ACTION_VIEW,
-                    Uri.parse("https://github.com/LizardByte/Sunshine/releases/latest"))) }) {
+                IconButton({ openSetupGuide() }) {
                     Icon(Icons.Default.HelpOutline, stringResource(R.string.pcr_setup_guide)) }
                 IconButton({ startActivity(Intent(this@PcListActivity, SettingsActivity::class.java)) }) {
                     Icon(Icons.Default.Settings, stringResource(R.string.pcr_settings)) }
@@ -116,6 +115,7 @@ class PcListActivity : ComponentActivity() {
                     PcAction.CONNECT -> R.string.pcr_connect
                     PcAction.PAIR -> R.string.pcr_pair
                     PcAction.WAKE -> R.string.pcr_wake
+                    PcAction.OFFLINE -> R.string.pcr_offline
                     PcAction.CHECKING -> R.string.pcr_checking
                 }
                 Button({ onAction(pc, action) }, enabled = action != PcAction.CHECKING) { Text(stringResource(label)) }
@@ -132,9 +132,13 @@ class PcListActivity : ComponentActivity() {
                 val ok = runCatching { WakeOnLanSender.sendWolPacket(pc) }.isSuccess
                 toast(if (ok) R.string.wol_waking_msg else R.string.wol_fail)
             }
+            PcAction.OFFLINE -> openSetupGuide()
             PcAction.CHECKING -> Unit
         }
     }
+
+    private fun openSetupGuide() =
+        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/LizardByte/Sunshine/releases/latest")))
 
     private fun http(pc: ComputerDetails) = NvHTTP(ServerHelper.getCurrentAddressFromComputer(pc), pc.httpsPort,
         binder!!.uniqueId, pc.serverCert, PlatformBinding.getCryptoProvider(this))
@@ -150,10 +154,11 @@ class PcListActivity : ComponentActivity() {
             }
         }
         thread {
-            val app = runCatching { PcListLogic.pickDesktop(http(pc).appList) }.getOrNull()
+            val apps = try { http(pc).appList } catch (e: Exception) { null }
             runOnUiThread {
-                if (app == null) toast(R.string.pcr_no_apps, long = true)
-                else ServerHelper.doStart(this, app, pc, b)
+                val problem = PcListLogic.connectProblem(apps)
+                if (problem != null) toast(problem, long = true)
+                else ServerHelper.doStart(this, PcListLogic.pickDesktop(apps!!)!!, pc, b)
             }
         }
     }
