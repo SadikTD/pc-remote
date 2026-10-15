@@ -28,9 +28,6 @@
         android:name="android.hardware.usb.host"
         android:required="false" />
     <uses-feature
-        android:name="android.software.leanback"
-        android:required="false" />
-    <uses-feature
         android:name="android.hardware.sensor.accelerometer"
         android:required="false" />
     <uses-feature
@@ -57,13 +54,6 @@
         android:enableOnBackInvokedCallback="false"
         android:theme="@style/AppTheme">
 
-        <provider
-            android:name=".PosterContentProvider"
-            android:authorities="poster.${applicationId}"
-            android:enabled="true"
-            android:exported="true">
-        </provider>
-
         <!-- Samsung multi-window support -->
         <uses-library
             android:name="com.sec.android.app.multiwindow"
@@ -87,16 +77,6 @@
              in each activity even though it is implied by targeting API 24+ -->
 
         <activity
-            android:name=".PcView"
-            android:exported="true"
-            android:resizeableActivity="true"
-            android:enableOnBackInvokedCallback="true"
-            android:configChanges="mcc|mnc|touchscreen|keyboard|keyboardHidden|navigation|screenLayout|fontScale|uiMode|orientation|screenSize|smallestScreenSize|layoutDirection">
-
-            <meta-data android:name="WindowManagerPreference:FreeformWindowSize" android:value="system-default" />
-            <meta-data android:name="WindowManagerPreference:FreeformWindowOrientation" android:value="landscape" />
-        </activity>
-        <activity
             android:name="com.pcremote.MainActivity"
             android:exported="true"
             android:resizeableActivity="true"
@@ -113,25 +93,6 @@
             android:name="com.pcremote.pclist.PcListActivity"
             android:exported="false"
             android:theme="@android:style/Theme.Material.NoActionBar" />
-        <!-- Small hack to support launcher shortcuts without relaunching over and over again when the back button is pressed -->
-        <activity
-            android:name=".ShortcutTrampoline"
-            android:noHistory="true"
-            android:exported="true"
-            android:resizeableActivity="true"
-            android:enableOnBackInvokedCallback="true"
-            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|screenLayout|fontScale|uiMode|orientation|screenSize|smallestScreenSize|layoutDirection">
-            <meta-data android:name="WindowManagerPreference:FreeformWindowSize" android:value="system-default" />
-            <meta-data android:name="WindowManagerPreference:FreeformWindowOrientation" android:value="landscape" />
-        </activity>
-        <activity
-            android:name=".AppView"
-            android:resizeableActivity="true"
-            android:enableOnBackInvokedCallback="true"
-            android:configChanges="mcc|mnc|touchscreen|keyboard|keyboardHidden|navigation|screenLayout|fontScale|uiMode|orientation|screenSize|smallestScreenSize|layoutDirection">
-            <meta-data android:name="WindowManagerPreference:FreeformWindowSize" android:value="system-default" />
-            <meta-data android:name="WindowManagerPreference:FreeformWindowOrientation" android:value="landscape" />
-        </activity>
         <activity
             android:name=".preferences.StreamSettings"
             android:resizeableActivity="true"
