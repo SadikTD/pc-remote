@@ -54,7 +54,11 @@ class SettingsActivity : ComponentActivity() {
             }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             Text(stringResource(R.string.pcr_advanced), Modifier.fillMaxWidth()
-                .clickable { startActivity(Intent(this@SettingsActivity, StreamSettings::class.java)) }
+                .clickable {
+                    // Manual values would be overwritten by Auto on the next connect.
+                    auto = false; QualityPrefs.setAuto(this@SettingsActivity, false)
+                    startActivity(Intent(this@SettingsActivity, StreamSettings::class.java))
+                }
                 .padding(vertical = 12.dp))
         }
     }
