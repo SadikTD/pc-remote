@@ -1,5 +1,6 @@
 package com.pcremote.stream
 
+import com.limelight.R
 import android.widget.FrameLayout
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
@@ -15,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -97,40 +99,40 @@ private fun StreamToolbar(state: ToolbarState, a: ToolbarActions) {
             }
         }
         if (state.offerLowerQuality) {
-            AssistChip(onClick = a::lowerQuality, label = { Text("Lower quality for smoother stream") },
+            AssistChip(onClick = a::lowerQuality, label = { Text(stringResource(R.string.pcr_tb_lower_quality)) },
                 modifier = Modifier.align(Alignment.TopCenter))
         }
         // Bottom-right: collapsible toolbar
         Column(Modifier.align(Alignment.BottomEnd), horizontalAlignment = Alignment.End) {
             AnimatedVisibility(open && media) {
                 Bar {
-                    Btn(Icons.Default.SkipPrevious, "Previous") { a.shortcut(Shortcut.PREV) }
-                    Btn(Icons.Default.PlayArrow, "Play/Pause") { a.shortcut(Shortcut.PLAY_PAUSE) }
-                    Btn(Icons.Default.SkipNext, "Next") { a.shortcut(Shortcut.NEXT) }
-                    Btn(Icons.Default.VolumeDown, "Volume down") { a.shortcut(Shortcut.VOL_DOWN) }
-                    Btn(Icons.Default.VolumeUp, "Volume up") { a.shortcut(Shortcut.VOL_UP) }
-                    Btn(Icons.Default.VolumeOff, "Mute") { a.shortcut(Shortcut.MUTE) }
+                    Btn(Icons.Default.SkipPrevious, stringResource(R.string.pcr_tb_previous)) { a.shortcut(Shortcut.PREV) }
+                    Btn(Icons.Default.PlayArrow, stringResource(R.string.pcr_tb_play_pause)) { a.shortcut(Shortcut.PLAY_PAUSE) }
+                    Btn(Icons.Default.SkipNext, stringResource(R.string.pcr_tb_next)) { a.shortcut(Shortcut.NEXT) }
+                    Btn(Icons.Default.VolumeDown, stringResource(R.string.pcr_tb_volume_down)) { a.shortcut(Shortcut.VOL_DOWN) }
+                    Btn(Icons.Default.VolumeUp, stringResource(R.string.pcr_tb_volume_up)) { a.shortcut(Shortcut.VOL_UP) }
+                    Btn(Icons.Default.VolumeOff, stringResource(R.string.pcr_tb_mute)) { a.shortcut(Shortcut.MUTE) }
                 }
             }
             AnimatedVisibility(open) {
                 Bar {
-                    Btn(Icons.Default.Keyboard, "Keyboard") { a.keyboard() }
-                    Btn(Icons.Default.MusicNote, "Media keys") { media = !media }
-                    Btn(Icons.Default.Window, "Windows key") { a.shortcut(Shortcut.WIN) }
-                    Btn(Icons.Default.SwapHoriz, "Alt+Tab") { a.shortcut(Shortcut.ALT_TAB) }
-                    Btn(Icons.Default.ContentCopy, "Copy") { a.shortcut(Shortcut.COPY) }
-                    Btn(Icons.Default.ContentPaste, "Paste") { a.shortcut(Shortcut.PASTE) }
-                    Btn(Icons.Default.Close, "Escape") { a.shortcut(Shortcut.ESC) }
+                    Btn(Icons.Default.Keyboard, stringResource(R.string.pcr_tb_keyboard)) { a.keyboard() }
+                    Btn(Icons.Default.MusicNote, stringResource(R.string.pcr_tb_media_keys)) { media = !media }
+                    Btn(Icons.Default.Window, stringResource(R.string.pcr_tb_windows_key)) { a.shortcut(Shortcut.WIN) }
+                    Btn(Icons.Default.SwapHoriz, stringResource(R.string.pcr_tb_alt_tab)) { a.shortcut(Shortcut.ALT_TAB) }
+                    Btn(Icons.Default.ContentCopy, stringResource(R.string.pcr_tb_copy)) { a.shortcut(Shortcut.COPY) }
+                    Btn(Icons.Default.ContentPaste, stringResource(R.string.pcr_tb_paste)) { a.shortcut(Shortcut.PASTE) }
+                    Btn(Icons.Default.Close, stringResource(R.string.pcr_tb_escape)) { a.shortcut(Shortcut.ESC) }
                     Btn(if (state.trackpad) Icons.Default.Mouse else Icons.Default.TouchApp,
-                        if (state.trackpad) "Trackpad mode (tap to switch to direct touch)" else "Direct touch (tap to switch to trackpad)") {
+                        if (state.trackpad) stringResource(R.string.pcr_tb_trackpad) else stringResource(R.string.pcr_tb_direct_touch)) {
                         state.trackpad = !state.trackpad; a.setTrackpad(state.trackpad)
                     }
-                    Btn(Icons.Default.Speed, "Show stats") { state.showPerf = !state.showPerf }
-                    Btn(Icons.Default.PowerSettingsNew, "Disconnect") { a.disconnect() }
+                    Btn(Icons.Default.Speed, stringResource(R.string.pcr_tb_stats)) { state.showPerf = !state.showPerf }
+                    Btn(Icons.Default.PowerSettingsNew, stringResource(R.string.pcr_tb_disconnect)) { a.disconnect() }
                 }
             }
             SmallFloatingActionButton(onClick = { open = !open }, containerColor = Color(0xCC222222)) {
-                Icon(if (open) Icons.Default.ExpandMore else Icons.Default.Menu, contentDescription = "Toolbar", tint = Color.White)
+                Icon(if (open) Icons.Default.ExpandMore else Icons.Default.Menu, contentDescription = stringResource(R.string.pcr_tb_toolbar), tint = Color.White)
             }
         }
     }

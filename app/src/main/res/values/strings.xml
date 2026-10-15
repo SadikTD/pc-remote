@@ -345,4 +345,23 @@
     <string name="pcr_pc_unreachable">Can\'t reach your PC. Make sure it\'s on, awake, and Sunshine is running, then try again.</string>
     <string name="pcr_offline">Offline · Help</string>
     <string name="pcr_auto_off">Automatic quality turned off. Turn it back on in Settings.</string>
+    <string name="pcr_tb_lower_quality">Lower quality for smoother stream</string>
+    <string name="pcr_tb_previous">Previous</string>
+    <string name="pcr_tb_play_pause">Play/Pause</string>
+    <string name="pcr_tb_next">Next</string>
+    <string name="pcr_tb_volume_down">Volume down</string>
+    <string name="pcr_tb_volume_up">Volume up</string>
+    <string name="pcr_tb_mute">Mute</string>
+    <string name="pcr_tb_keyboard">Keyboard</string>
+    <string name="pcr_tb_media_keys">Media keys</string>
+    <string name="pcr_tb_windows_key">Windows key</string>
+    <string name="pcr_tb_alt_tab">Alt+Tab</string>
+    <string name="pcr_tb_copy">Copy</string>
+    <string name="pcr_tb_paste">Paste</string>
+    <string name="pcr_tb_escape">Escape</string>
+    <string name="pcr_tb_trackpad">Trackpad mode (tap to switch to direct touch)</string>
+    <string name="pcr_tb_direct_touch">Direct touch (tap to switch to trackpad)</string>
+    <string name="pcr_tb_stats">Show stats</string>
+    <string name="pcr_tb_disconnect">Disconnect</string>
+    <string name="pcr_tb_toolbar">Toolbar</string>
 </resources>
