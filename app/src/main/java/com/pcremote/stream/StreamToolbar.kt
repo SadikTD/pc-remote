@@ -61,7 +61,7 @@ private class OverlayOwner : LifecycleOwner, SavedStateRegistryOwner {
 
 object StreamToolbarHost {
     @JvmStatic
-    fun attach(parent: FrameLayout, state: ToolbarState, actions: ToolbarActions) {
+    fun attach(parent: FrameLayout, state: ToolbarState, actions: ToolbarActions): android.view.View {
         val owner = OverlayOwner()
         val view = ComposeView(parent.context).apply {
             setViewTreeLifecycleOwner(owner)
@@ -73,6 +73,7 @@ object StreamToolbarHost {
             setContent { MaterialTheme(colorScheme = darkColorScheme()) { StreamToolbar(state, actions) } }
         }
         parent.addView(view, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        return view
     }
 }
 

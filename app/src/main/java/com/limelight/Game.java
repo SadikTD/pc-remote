@@ -96,6 +96,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         com.pcremote.stream.ToolbarActions {
 
     private final com.pcremote.stream.ToolbarState toolbarState = new com.pcremote.stream.ToolbarState();
+    private View toolbarView;
     private final Handler pcrHandler = new Handler(Looper.getMainLooper());
     private final com.pcremote.stream.PoorConnectionWatch poorWatch = new com.pcremote.stream.PoorConnectionWatch(10_000,
             (delay, r) -> { pcrHandler.postDelayed(r, delay); return kotlin.Unit.INSTANCE; },
@@ -554,7 +555,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         // PC Remote toolbar overlay; its stats readout replaces the old text overlay
         toolbarState.setTrackpad(prefConfig.touchscreenTrackpad);
         performanceOverlayView.setAlpha(0f);
-        com.pcremote.stream.StreamToolbarHost.attach((FrameLayout) streamView.getParent(), toolbarState, this);
+        toolbarView = com.pcremote.stream.StreamToolbarHost.attach((FrameLayout) streamView.getParent(), toolbarState, this);
 
         if (prefConfig.usbDriver) {
             // Start the USB driver
@@ -681,6 +682,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
                 performanceOverlayView.setVisibility(View.GONE);
                 notificationOverlayView.setVisibility(View.GONE);
+                if (toolbarView != null) toolbarView.setVisibility(View.GONE);
 
                 // Disable sensors while in PiP mode
                 controllerHandler.disableSensors();
@@ -702,6 +704,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                 }
 
                 notificationOverlayView.setVisibility(requestedNotificationOverlayVisibility);
+                if (toolbarView != null) toolbarView.setVisibility(View.VISIBLE);
 
                 // Enable sensors again after exiting PiP
                 controllerHandler.enableSensors();
