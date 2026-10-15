@@ -111,6 +111,9 @@ fun ModeScaffold(
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(stringResource(R.string.pcr_conn_unknown_pc), color = c.textDim)
             }
-        } else content(state)
+        } else {
+            ClipboardSync(session, state)
+            content(state)
+        }
     }
 }
