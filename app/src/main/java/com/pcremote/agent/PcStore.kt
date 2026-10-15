@@ -15,12 +15,22 @@ interface KeyValue {
 data class PairedPc(
     val id: String, val name: String, val hosts: List<String>, val port: Int, val fingerprint: String,
     val token: String, val moonlightUuid: String?, val macs: List<String>,
-)
+    /** Public address from "access from anywhere", tried after the LAN hosts. */
+    val publicHost: String? = null,
+) {
+    /** Addresses to try, best first. */
+    val allHosts get() = HostOrder.order(hosts, publicHost)
+}
+
+object HostOrder {
+    fun order(lan: List<String>, public: String?) = (lan + listOfNotNull(public)).distinct()
+}
 
 @Serializable
 private data class StoredPc(
     val id: String, val name: String, val hosts: List<String>, val port: Int, val fp: String,
     val sealedToken: String, val moonlightUuid: String? = null, val macs: List<String> = emptyList(),
+    val publicHost: String? = null,
 )
 
 class PcStore(private val kv: KeyValue, private val box: SecretBox) {
@@ -34,11 +44,11 @@ class PcStore(private val kv: KeyValue, private val box: SecretBox) {
 
     fun all(): List<PairedPc> = load().mapNotNull { s ->
         val token = runCatching { box.open(s.sealedToken) }.getOrNull() ?: return@mapNotNull null
-        PairedPc(s.id, s.name, s.hosts, s.port, s.fp, token, s.moonlightUuid, s.macs)
+        PairedPc(s.id, s.name, s.hosts, s.port, s.fp, token, s.moonlightUuid, s.macs, s.publicHost)
     }
 
     fun upsert(pc: PairedPc) {
-        val stored = StoredPc(pc.id, pc.name, pc.hosts, pc.port, pc.fingerprint, box.seal(pc.token), pc.moonlightUuid, pc.macs)
+        val stored = StoredPc(pc.id, pc.name, pc.hosts, pc.port, pc.fingerprint, box.seal(pc.token), pc.moonlightUuid, pc.macs, pc.publicHost)
         val l = load().toMutableList()
         val i = l.indexOfFirst { it.id == pc.id }
         if (i >= 0) l[i] = stored else l += stored

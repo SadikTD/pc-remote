@@ -41,7 +41,7 @@ fun rememberAgentSession(pcId: String): AgentSession? {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val pc = remember(pcId) { PcStore.get(ctx).all().firstOrNull { it.id == pcId } } ?: return null
-    val session = remember(pcId) { AgentSession(pc, AgentConnection(pc.hosts, pc.port, pc.fingerprint, scope)) }
+    val session = remember(pcId) { AgentSession(pc, AgentConnection(pc.allHosts, pc.port, pc.fingerprint, scope)) }
     DisposableEffect(session) {
         scope.launch { session.conn.hello(pc.token, Build.MODEL) }
         onDispose { session.conn.close() }

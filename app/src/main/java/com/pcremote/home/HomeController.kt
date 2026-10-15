@@ -51,16 +51,22 @@ class HomeController(ctx: Context, private val scope: CoroutineScope, val comput
     }
 
     private fun open(pc: PairedPc) {
-        val c = AgentConnection(pc.hosts, pc.port, pc.fingerprint, scope)
+        val c = AgentConnection(pc.allHosts, pc.port, pc.fingerprint, scope)
         conns[pc.id] = c
         jobs += scope.launch {
             c.state.collect { st ->
                 live.value = live.value + (pc.id to st)
                 if (st is AgentState.Online && "thumb" in st.caps) c.send(Msg.ThumbSub(true))
+                if (st is AgentState.Online && "net" in st.caps) c.send(Msg.NetReq)
             }
         }
         jobs += scope.launch {
-            c.incoming.collect { m -> if (m is Msg.Status) streaming.value = streaming.value + (pc.id to m.streaming) }
+            c.incoming.collect { m ->
+                if (m is Msg.Status) streaming.value = streaming.value + (pc.id to m.streaming)
+                if (m is Msg.Net && m.public != pc.publicHost) store.all().firstOrNull { it.id == pc.id }?.let {
+                    store.upsert(it.copy(publicHost = m.public))
+                }
+            }
         }
         jobs += scope.launch {
             c.binary.collect { b ->
