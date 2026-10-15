@@ -365,4 +365,23 @@
     <string name="pcr_tb_stats">Show stats</string>
     <string name="pcr_tb_disconnect">Disconnect</string>
     <string name="pcr_tb_toolbar">Toolbar</string>
+    <string name="pcr_qr_invalid">That\'s not a PC Remote code. Open PC Remote on your PC and scan the code it shows.</string>
+    <string name="pcr_qr_expired">That code expired. Scan the new one on your PC.</string>
+    <string name="pcr_same_wifi">Can\'t reach your PC. Make sure your phone and PC are on the same Wi-Fi.</string>
+    <string name="pcr_cert_mismatch">Security check failed: the PC at that address isn\'t the one that showed this code. Nothing was saved.</string>
+    <string name="pcr_ob_welcome_title">Your PC, in your hand.</string>
+    <string name="pcr_ob_welcome_body">Control, stream and play from your phone. Fast, private, no cloud.</string>
+    <string name="pcr_ob_get_title">Get PC Remote for Windows</string>
+    <string name="pcr_ob_get_body">Install it on your PC from this link. It sets everything up for you.</string>
+    <string name="pcr_ob_get_link">github.com/SadikTD/pc-remote/releases</string>
+    <string name="pcr_ob_share">Share link</string>
+    <string name="pcr_ob_scan_title">Scan the code on your PC</string>
+    <string name="pcr_ob_scan_body">Open PC Remote on your PC. A code appears. Scan it and you\'re done.</string>
+    <string name="pcr_ob_scan">Scan code</string>
+    <string name="pcr_ob_manual">Pair manually by IP</string>
+    <string name="pcr_ob_next">Next</string>
+    <string name="pcr_ob_skip">Skip</string>
+    <string name="pcr_ob_pairing">Pairing with %1$s…</string>
+    <string name="pcr_ob_done">Paired with your PC</string>
+    <string name="pcr_try_again">Try again</string>
 </resources>
