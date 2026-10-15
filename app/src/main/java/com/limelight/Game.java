@@ -99,6 +99,17 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     private final TouchContext[] touchContextMap = new TouchContext[2];
     private long threeFingerDownTime = 0;
 
+    private final com.pcremote.stream.ZoomPan zoomPan = new com.pcremote.stream.ZoomPan();
+    private android.view.ScaleGestureDetector scaleDetector;
+    private boolean zoomGestureActive;
+    private float lastPanX, lastPanY;
+
+    private void applyZoom() {
+        streamView.setPivotX(0); streamView.setPivotY(0);
+        streamView.setScaleX(zoomPan.getScale()); streamView.setScaleY(zoomPan.getScale());
+        streamView.setTranslationX(zoomPan.getTx()); streamView.setTranslationY(zoomPan.getTy());
+    }
+
     private static final int REFERENCE_HORIZ_RES = 1280;
     private static final int REFERENCE_VERT_RES = 720;
 
@@ -242,6 +253,20 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         streamView.setOnGenericMotionListener(this);
         streamView.setOnKeyListener(this);
         streamView.setInputCallbacks(this);
+
+        scaleDetector = new android.view.ScaleGestureDetector(this,
+                new android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                    @Override public boolean onScaleBegin(android.view.ScaleGestureDetector d) {
+                        zoomGestureActive = true;
+                        for (TouchContext c : touchContextMap) c.cancelTouch();
+                        return true;
+                    }
+                    @Override public boolean onScale(android.view.ScaleGestureDetector d) {
+                        zoomPan.pinch(d.getScaleFactor(), d.getFocusX() - streamView.getLeft(), d.getFocusY() - streamView.getTop());
+                        applyZoom();
+                        return true;
+                    }
+                });
 
         // Listen for touch events on the background touch view to enable trackpad mode
         // to work on areas outside of the StreamView itself. We use a separate View
@@ -2002,12 +2027,34 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                     return true;
                 }
 
-                // If this is the parent view, we'll offset our coordinates to appear as if they
-                // are relative to the StreamView like our StreamView touch events are.
+                scaleDetector.onTouchEvent(event);
+                if (zoomGestureActive) {
+                    if (event.getActionMasked() == MotionEvent.ACTION_UP || event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
+                        zoomGestureActive = false;
+                    }
+                    return true;
+                }
+                // While zoomed, two-finger drag pans instead of scrolling.
+                if (zoomPan.isZoomed() && event.getPointerCount() == 2) {
+                    float cx = (event.getX(0) + event.getX(1)) / 2, cy = (event.getY(0) + event.getY(1)) / 2;
+                    if (event.getActionMasked() == MotionEvent.ACTION_POINTER_DOWN) {
+                        for (TouchContext c : touchContextMap) c.cancelTouch();
+                    } else if (event.getActionMasked() == MotionEvent.ACTION_MOVE) {
+                        zoomPan.pan(cx - lastPanX, cy - lastPanY);
+                        applyZoom();
+                    }
+                    lastPanX = cx; lastPanY = cy;
+                    return true;
+                }
+
+                // If this is the parent view, map our coordinates (including any zoom) so they
+                // appear relative to the unscaled StreamView like our StreamView touch events are.
                 float xOffset, yOffset;
                 if (view != streamView && !prefConfig.touchscreenTrackpad) {
-                    xOffset = -streamView.getX();
-                    yOffset = -streamView.getY();
+                    int ai = event.getActionIndex();
+                    float rx = event.getX(ai) - streamView.getLeft(), ry = event.getY(ai) - streamView.getTop();
+                    xOffset = zoomPan.toStreamX(rx) - event.getX(ai);
+                    yOffset = zoomPan.toStreamY(ry) - event.getY(ai);
                 }
                 else {
                     xOffset = 0.f;
@@ -2482,6 +2529,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         if (!surfaceCreated) {
             throw new IllegalStateException("Surface changed before creation!");
         }
+
+        zoomPan.setContentSize(streamView.getWidth(), streamView.getHeight());
+        applyZoom();
 
         if (!attemptedConnection) {
             attemptedConnection = true;
