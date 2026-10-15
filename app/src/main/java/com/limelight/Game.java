@@ -60,6 +60,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.util.Rational;
 import android.view.Display;
 import android.view.InputDevice;
@@ -180,6 +181,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     public static final String EXTRA_PC_NAME = "PcName";
     public static final String EXTRA_APP_HDR = "HDR";
     public static final String EXTRA_SERVER_CERT = "ServerCert";
+    public static final String EXTRA_RECONNECT_ATTEMPT = "PcrReconnectAttempt";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -2257,7 +2259,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                 .setNegativeButton(R.string.pcr_close, (d, w) -> finish());
         if (err.getRetryable()) {
             b.setPositiveButton(R.string.pcr_retry, (d, w) -> {
-                startActivity(getIntent());
+                startActivity(new Intent(getIntent()).putExtra(EXTRA_RECONNECT_ATTEMPT, 0));
                 finish();
             });
         }
@@ -2318,6 +2320,20 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                     // Otherwise, just finish the activity immediately.
                     if (errorCode != MoonBridge.ML_ERROR_GRACEFUL_TERMINATION) {
                         boolean blocked = portTestResult != MoonBridge.ML_TEST_RESULT_INCONCLUSIVE && portTestResult != 0;
+                        int attempt = getIntent().getIntExtra(EXTRA_RECONNECT_ATTEMPT, 0);
+                        if (com.pcremote.stream.ReconnectPolicy.INSTANCE.shouldRetry(errorCode, blocked, attempt)) {
+                            notificationOverlayView.setText(getString(R.string.pcr_reconnecting,
+                                    attempt + 1, com.pcremote.stream.ReconnectPolicy.MAX_ATTEMPTS));
+                            notificationOverlayView.setVisibility(View.VISIBLE);
+                            final Intent again = new Intent(getIntent()).putExtra(EXTRA_RECONNECT_ATTEMPT, attempt + 1);
+                            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                                if (isFinishing()) return; // user backed out while waiting
+                                startActivity(again);
+                                finish();
+                                overridePendingTransition(0, 0);
+                            }, com.pcremote.stream.ReconnectPolicy.INSTANCE.delayMs(attempt));
+                            return;
+                        }
                         showFriendlyError(com.pcremote.stream.ConnectionErrors.INSTANCE.forTermination(errorCode, blocked),
                                 "error " + errorCode);
                     }
@@ -2364,6 +2380,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
+                getIntent().putExtra(EXTRA_RECONNECT_ATTEMPT, 0);
                 if (spinner != null) {
                     spinner.dismiss();
                     spinner = null;

@@ -317,4 +317,5 @@
     <string name="pcr_err_decoder_msg">Your phone couldn\'t start its video decoder. Retry. PC Remote switches to a safer video format automatically.</string>
     <string name="pcr_retry">Retry</string>
     <string name="pcr_close">Close</string>
+    <string name="pcr_reconnecting">Reconnecting… (%1$d/%2$d)</string>
 </resources>
