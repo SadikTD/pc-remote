@@ -49,4 +49,20 @@ class KeyboardBarModelTest {
         assertEquals(listOf(KeyEvt(km(0x10), KEY_UP, MODIFIER_CTRL), KeyEvt(km(0x11), KEY_UP, 0)), post)
         assertTrue(Mod.entries.all { m.state(it) == ModState.OFF })
     }
+
+    @Test fun `release matches what was pressed even if the bar changed in between`() {
+        val m = KeyboardBarModel()
+        m.tap(Mod.CTRL, 0)
+        m.downPrefix()
+        m.tap(Mod.CTRL, 5_000) // user turned Ctrl off while the key was held
+        assertEquals(listOf(KeyEvt(km(0x11), KEY_UP, 0)), m.upSuffix())
+    }
+
+    @Test fun `releaseHeld lets go of anything still down`() {
+        val m = KeyboardBarModel()
+        m.tap(Mod.WIN, 0)
+        m.downPrefix()
+        assertEquals(listOf(KeyEvt(km(0x5B), KEY_UP, 0)), m.releaseHeld())
+        assertTrue(m.releaseHeld().isEmpty())
+    }
 }

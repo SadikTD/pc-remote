@@ -1179,6 +1179,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     protected void onStop() {
         super.onStop();
 
+        // Never leave keyboard-bar modifiers held down on the PC
+        sendKeys(toolbarState.getBar().releaseHeld());
+
         SpinnerDialog.closeDialogs(this);
         Dialog.closeDialogs();
         if (friendlyErrorDialog != null) {
@@ -1566,8 +1569,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
             conn.sendKeyboardInput(translated, KeyboardPacket.KEY_UP, (byte) (getModifierState(event) | toolbarState.getBar().activeMask()),
                     keyboardTranslator.hasNormalizedMapping(event.getKeyCode(), event.getDeviceId()) ? 0 : MoonBridge.SS_KBE_FLAG_NON_NORMALIZED);
-            if (toolbarState.getBar().anyActive()) {
-                sendKeys(toolbarState.getBar().upSuffix());
+            java.util.List<com.pcremote.stream.KeyEvt> modUps = toolbarState.getBar().upSuffix();
+            if (!modUps.isEmpty()) {
+                sendKeys(modUps);
                 toolbarState.setBarTick(toolbarState.getBarTick() + 1);
             }
         }
