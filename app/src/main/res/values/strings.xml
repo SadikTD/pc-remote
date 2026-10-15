@@ -459,4 +459,8 @@
     <string name="pcr_slides_next">Next</string>
     <string name="pcr_slides_black">Black screen</string>
     <string name="pcr_slides_laser">Hold for pointer</string>
+    <string name="pcr_pad_xbox">Xbox</string>
+    <string name="pcr_pad_racing">Racing</string>
+    <string name="pcr_pad_shooter">Shooter</string>
+    <string name="pcr_pad_minimal">Minimal</string>
 </resources>
