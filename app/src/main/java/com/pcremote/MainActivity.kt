@@ -45,7 +45,7 @@ const val PREF_ONBOARDED = "pcremote_onboarded"
 const val SETUP_GUIDE_URL = "https://github.com/SadikTD/pc-remote/blob/main/docs/setup-sunshine.md"
 
 /** Modes with a screen in this build; Track C adds the rest. */
-val IMPLEMENTED_MODES = setOf(Mode.SCREEN, Mode.REMOTE)
+val IMPLEMENTED_MODES = setOf(Mode.SCREEN, Mode.REMOTE, Mode.MEDIA)
 
 class MainActivity : ComponentActivity() {
     private lateinit var computers: Computers
@@ -105,6 +105,9 @@ class MainActivity : ComponentActivity() {
                     }
                     composable(Routes.modePattern(Mode.REMOTE)) { e ->
                         com.pcremote.modes.RemoteScreen(modeId(e), onBack = { nav.popBackStack() }, onPower = {})
+                    }
+                    composable(Routes.modePattern(Mode.MEDIA)) { e ->
+                        com.pcremote.modes.MediaScreen(modeId(e), onBack = { nav.popBackStack() }, onPower = {})
                     }
                     composable(Routes.SETTINGS) {
                         com.pcremote.settings.SettingsScreen(settings, onBack = { nav.popBackStack() },
@@ -167,6 +170,19 @@ class MainActivity : ComponentActivity() {
             val ok = runCatching { WakeOnLanSender.sendWolPacket(target) }.isSuccess
             runOnUiThread { Toast.makeText(this, if (ok) R.string.wol_waking_msg else R.string.wol_fail, Toast.LENGTH_SHORT).show() }
         }
+    }
+
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        val up = when (event.keyCode) {
+            android.view.KeyEvent.KEYCODE_VOLUME_UP -> true
+            android.view.KeyEvent.KEYCODE_VOLUME_DOWN -> false
+            else -> null
+        }
+        if (up != null) {
+            if (event.action == android.view.KeyEvent.ACTION_DOWN && com.pcremote.modes.VolumeKeys.onVolumeKey(up)) return true
+            if (event.action == android.view.KeyEvent.ACTION_UP && com.pcremote.modes.VolumeKeys.active) return true
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     override fun onDestroy() {

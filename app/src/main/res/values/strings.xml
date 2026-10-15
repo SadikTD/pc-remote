@@ -449,4 +449,6 @@
     <string name="pcr_conn_unknown_pc">This PC is no longer paired.</string>
     <string name="pcr_remote_hint">Tap to click · two fingers to scroll or right-click · hold to drag</string>
     <string name="pcr_remote_typing">Type on your keyboard. It goes straight to your PC.</string>
+    <string name="pcr_media_nothing">Nothing playing</string>
+    <string name="pcr_media_volume">VOLUME</string>
 </resources>
