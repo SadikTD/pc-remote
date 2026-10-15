@@ -1,3 +1,4 @@
+pub mod input;
 pub mod sunshine;
 pub mod agent;
 pub mod store;
