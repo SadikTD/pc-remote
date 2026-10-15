@@ -25,6 +25,13 @@ class ConnectionErrorsTest {
         assertFalse(ConnectionErrors.forTermination(MoonBridge.ML_ERROR_PROTECTED_CONTENT, false).retryable)
     }
 
+    @Test fun `early termination and frame conversion explain the PC side, not wifi`() {
+        assertEquals(R.string.pcr_err_start_title,
+            ConnectionErrors.forTermination(MoonBridge.ML_ERROR_UNEXPECTED_EARLY_TERMINATION, false).title)
+        assertEquals(R.string.pcr_err_decoder_title,
+            ConnectionErrors.forTermination(MoonBridge.ML_ERROR_FRAME_CONVERSION, false).title)
+    }
+
     @Test fun `unknown code is a retryable lost connection`() {
         val e = ConnectionErrors.forTermination(-12345, false)
         assertEquals(R.string.pcr_err_lost_title, e.title)

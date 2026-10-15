@@ -16,6 +16,17 @@ class ReconnectPolicyTest {
         assertFalse(ReconnectPolicy.shouldRetry(-1, true, 0))
     }
 
+    @Test fun `no video errors are not auto retried`() {
+        // they happen after connectionStarted resets the counter, so retrying would loop forever
+        assertFalse(ReconnectPolicy.shouldRetry(MoonBridge.ML_ERROR_NO_VIDEO_TRAFFIC, false, 0))
+        assertFalse(ReconnectPolicy.shouldRetry(MoonBridge.ML_ERROR_NO_VIDEO_FRAME, false, 0))
+    }
+
+    @Test fun `host-side failures are not auto retried`() {
+        assertFalse(ReconnectPolicy.shouldRetry(MoonBridge.ML_ERROR_UNEXPECTED_EARLY_TERMINATION, false, 0))
+        assertFalse(ReconnectPolicy.shouldRetry(MoonBridge.ML_ERROR_FRAME_CONVERSION, false, 0))
+    }
+
     @Test fun `drops retried up to three times`() {
         assertTrue(ReconnectPolicy.shouldRetry(-1, false, 0))
         assertTrue(ReconnectPolicy.shouldRetry(-1, false, 2))

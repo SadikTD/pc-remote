@@ -15,6 +15,10 @@ object ConnectionErrors {
             FriendlyError(R.string.pcr_err_no_video_title, R.string.pcr_err_no_video_msg, true)
         errorCode == MoonBridge.ML_ERROR_PROTECTED_CONTENT ->
             FriendlyError(R.string.pcr_err_protected_title, R.string.pcr_err_protected_msg, false)
+        errorCode == MoonBridge.ML_ERROR_UNEXPECTED_EARLY_TERMINATION ->
+            FriendlyError(R.string.pcr_err_start_title, R.string.pcr_err_start_msg, true)
+        errorCode == MoonBridge.ML_ERROR_FRAME_CONVERSION ->
+            FriendlyError(R.string.pcr_err_decoder_title, R.string.pcr_err_decoder_msg, true)
         else -> FriendlyError(R.string.pcr_err_lost_title, R.string.pcr_err_lost_msg, true)
     }
 
