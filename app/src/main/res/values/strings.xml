@@ -451,4 +451,12 @@
     <string name="pcr_remote_typing">Type on your keyboard. It goes straight to your PC.</string>
     <string name="pcr_media_nothing">Nothing playing</string>
     <string name="pcr_media_volume">VOLUME</string>
+    <string name="pcr_slides_tap_start">Tap to start the timer</string>
+    <string name="pcr_slides_tap_reset">Tap to reset</string>
+    <string name="pcr_slides_no_target">No target</string>
+    <string name="pcr_slides_target">%1$d min</string>
+    <string name="pcr_slides_prev">Previous</string>
+    <string name="pcr_slides_next">Next</string>
+    <string name="pcr_slides_black">Black screen</string>
+    <string name="pcr_slides_laser">Hold for pointer</string>
 </resources>

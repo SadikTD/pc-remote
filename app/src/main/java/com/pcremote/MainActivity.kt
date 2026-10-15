@@ -45,7 +45,7 @@ const val PREF_ONBOARDED = "pcremote_onboarded"
 const val SETUP_GUIDE_URL = "https://github.com/SadikTD/pc-remote/blob/main/docs/setup-sunshine.md"
 
 /** Modes with a screen in this build; Track C adds the rest. */
-val IMPLEMENTED_MODES = setOf(Mode.SCREEN, Mode.REMOTE, Mode.MEDIA)
+val IMPLEMENTED_MODES = setOf(Mode.SCREEN, Mode.REMOTE, Mode.MEDIA, Mode.SLIDES)
 
 class MainActivity : ComponentActivity() {
     private lateinit var computers: Computers
@@ -108,6 +108,9 @@ class MainActivity : ComponentActivity() {
                     }
                     composable(Routes.modePattern(Mode.MEDIA)) { e ->
                         com.pcremote.modes.MediaScreen(modeId(e), onBack = { nav.popBackStack() }, onPower = {})
+                    }
+                    composable(Routes.modePattern(Mode.SLIDES)) { e ->
+                        com.pcremote.modes.SlidesScreen(modeId(e), onBack = { nav.popBackStack() }, onPower = {})
                     }
                     composable(Routes.SETTINGS) {
                         com.pcremote.settings.SettingsScreen(settings, onBack = { nav.popBackStack() },
