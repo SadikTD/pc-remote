@@ -43,6 +43,8 @@ class PcListActivity : ComponentActivity() {
     private var binder: ComputerManagerService.ComputerManagerBinder? = null
     private val pcs = mutableStateMapOf<String, ComputerDetails>()
     private var pairingPin by mutableStateOf<Pair<String, String>?>(null) // (pc name, PIN)
+    private var pairing = false
+    private var pairGen = 0 // bumped on Cancel so the abandoned pairing thread's result is ignored
 
     private val listener = ComputerManagerListener { d ->
         if (d.uuid != null) runOnUiThread { pcs[d.uuid] = ComputerDetails(d) }
@@ -62,7 +64,7 @@ class PcListActivity : ComponentActivity() {
         setContent { MaterialTheme(colorScheme = darkColorScheme()) { Screen() } }
     }
 
-    override fun onResume() { super.onResume(); binder?.startPolling(listener) }
+    override fun onResume() { super.onResume(); if (!pairing) binder?.startPolling(listener) }
     override fun onPause() { super.onPause(); binder?.stopPolling() }
     override fun onDestroy() { super.onDestroy(); unbindService(conn) }
 
@@ -95,6 +97,7 @@ class PcListActivity : ComponentActivity() {
         }
         pairingPin?.let { (name, pin) ->
             AlertDialog(onDismissRequest = {}, confirmButton = {},
+                dismissButton = { TextButton({ cancelPairing() }) { Text(stringResource(android.R.string.cancel)) } },
                 title = { Text(stringResource(R.string.pcr_pair_title, name)) },
                 text = { Column {
                     Text(pin, fontSize = 48.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.CenterHorizontally))
@@ -164,16 +167,19 @@ class PcListActivity : ComponentActivity() {
     }
 
     private fun pair(pc: ComputerDetails) {
+        if (pairing) return
         val b = binder ?: return
+        pairing = true
+        val gen = ++pairGen
+        b.stopPolling()
         thread {
-            b.stopPolling()
             var state: PairingManager.PairState? = null
             try {
                 val h = http(pc)
                 if (h.pairState == PairingManager.PairState.PAIRED) state = PairingManager.PairState.PAIRED
                 else {
                     val pin = PairingManager.generatePinString()
-                    runOnUiThread { pairingPin = (pc.name ?: "PC") to pin }
+                    runOnUiThread { if (gen == pairGen) pairingPin = (pc.name ?: "PC") to pin }
                     val pm = h.pairingManager
                     state = pm.pair(h.getServerInfo(true), pin)
                     if (state == PairingManager.PairState.PAIRED) {
@@ -184,11 +190,19 @@ class PcListActivity : ComponentActivity() {
             } catch (e: Exception) { /* PC unreachable mid-pair: state stays null */ }
             val msg = PcListLogic.pairOutcomeMessage(state, pc.runningGameId != 0)
             runOnUiThread {
-                pairingPin = null
-                b.startPolling(listener)
+                if (gen != pairGen) return@runOnUiThread
+                endPairing()
                 if (msg != null) toast(msg, long = true) else connect(b.getComputer(pc.uuid) ?: pc)
             }
         }
+    }
+
+    private fun cancelPairing() { pairGen++; endPairing() }
+
+    private fun endPairing() {
+        pairing = false
+        pairingPin = null
+        if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) binder?.startPolling(listener)
     }
 
     private fun toast(res: Int, long: Boolean = false) = runOnUiThread {
