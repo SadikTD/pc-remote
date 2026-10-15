@@ -5,6 +5,7 @@ pub mod files;
 pub mod host;
 pub mod input;
 pub mod media;
+pub mod net;
 pub mod pad;
 pub mod power;
 pub mod proto;
@@ -31,6 +32,7 @@ pub struct App {
     pub sunshine: Arc<Sunshine>,
     pub fp: String,
     pub outgoing: files::Outgoing,
+    pub net: Arc<Mutex<net::NetStatus>>,
 }
 
 pub fn data_dir() -> PathBuf {
@@ -109,6 +111,7 @@ pub fn run() {
             commands::open_release,
             commands::send_file,
             commands::pick_files_dir,
+            commands::get_net,
         ])
         .setup(move |app| {
             let identity = tls::Identity::load_or_create(&dir)?;
@@ -116,7 +119,11 @@ pub fn run() {
             let sun = Arc::new(Sunshine::local(None));
             ensure_sunshine_creds(dir.clone(), sun.clone());
             let host = Arc::new(host::Host::new(store.clone(), sun.clone()));
-            let outgoing = host.outgoing.clone();
+            let (outgoing, net) = (host.outgoing.clone(), host.net.clone());
+            if store.lock().unwrap().config().anywhere {
+                let net = net.clone();
+                tauri::async_runtime::spawn(async move { *net.lock().unwrap() = net::apply_now(true).await });
+            }
             let _ = win::sys::register_send_verb();
             let agent = tauri::async_runtime::block_on(agent::Agent::start(
                 &identity,
@@ -126,7 +133,7 @@ pub fn run() {
                 Duration::from_secs(30),
             ))?;
             let mut events = agent.events();
-            app.manage(App { store, agent: agent.clone(), sunshine: sun, fp: identity.fingerprint_hex.clone(), outgoing });
+            app.manage(App { store, agent: agent.clone(), sunshine: sun, fp: identity.fingerprint_hex.clone(), outgoing, net });
 
             let open = MenuItem::with_id(app, "open", "Open", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;

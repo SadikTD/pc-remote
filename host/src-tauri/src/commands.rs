@@ -140,6 +140,8 @@ pub async fn set_config(app: State<'_, App>, config: Config) -> Result<(), Strin
         app.sunshine.set_config("output_name", &config.display).await.map_err(|e| format!("{e:?}"))?;
     }
     if old.anywhere != config.anywhere {
+        let st = crate::net::apply_now(config.anywhere).await;
+        *app.net.lock().unwrap() = st;
         let v = if config.anywhere { "enabled" } else { "disabled" };
         app.sunshine.set_config("upnp", v).await.map_err(|e| format!("{e:?}"))?;
     }
@@ -182,6 +184,19 @@ pub fn pick_files_dir(app: State<'_, App>, window: tauri::WebviewWindow) -> Resu
     cfg.files_dir = dir.clone();
     store.set_config(cfg).map_err(|e| e.to_string())?;
     Ok(Some(dir))
+}
+
+#[derive(Serialize)]
+pub struct NetView {
+    #[serde(flatten)]
+    status: crate::net::NetStatus,
+    lan: Vec<String>,
+}
+
+/// Access-from-anywhere status for Settings.
+#[tauri::command]
+pub fn get_net(app: State<'_, App>) -> NetView {
+    NetView { status: app.net.lock().unwrap().clone(), lan: rank_ips(crate::win::sys::adapters().0) }
 }
 
 /// Opens the project's GitHub releases page in the default browser.

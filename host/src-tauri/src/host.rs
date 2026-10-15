@@ -6,7 +6,7 @@ use crate::store::Store;
 use crate::sunshine::{self, Sunshine};
 use crate::files::{self, Incoming, Outgoing};
 use crate::pad::{self, Pads};
-use crate::{clip, input, media, power, thumb, win};
+use crate::{clip, commands, input, media, net, power, thumb, win};
 use std::sync::{Arc, Mutex};
 
 pub struct Host {
@@ -15,12 +15,13 @@ pub struct Host {
     pub outgoing: Outgoing,
     /// None when the ViGEmBus driver isn't installed.
     pads: Option<Arc<dyn pad::Bus>>,
+    pub net: Arc<Mutex<net::NetStatus>>,
 }
 
 impl Host {
     pub fn new(store: Arc<Mutex<Store>>, sunshine: Arc<Sunshine>) -> Self {
         let pads = pad::ViGEm::connect().map(|b| Arc::new(b) as Arc<dyn pad::Bus>);
-        Host { store, sunshine, outgoing: Outgoing::default(), pads }
+        Host { store, sunshine, outgoing: Outgoing::default(), pads, net: Arc::default() }
     }
 }
 
@@ -50,7 +51,7 @@ impl Handlers for Host {
     }
 
     fn caps(&self) -> Vec<String> {
-        let mut c: Vec<String> = ["input", "power", "media", "files", "clip", "thumb"].map(String::from).to_vec();
+        let mut c: Vec<String> = ["input", "power", "media", "files", "clip", "thumb", "net"].map(String::from).to_vec();
         if self.pads.is_some() {
             c.push("pad".into());
         }
@@ -76,6 +77,7 @@ impl Handlers for Host {
             sid: u64::from_le_bytes(crate::store::random::<8>()),
             pads,
             thumb: None,
+            net: self.net.clone(),
         })
     }
 }
@@ -92,6 +94,7 @@ pub struct HostSession {
     sid: u64,
     pads: Option<Pads>,
     thumb: Option<tokio::task::JoinHandle<()>>,
+    net: Arc<Mutex<net::NetStatus>>,
 }
 
 impl HostSession {
@@ -151,6 +154,15 @@ impl Session for HostSession {
                 }
                 Err(code) => err(code, "unknown media command"),
             },
+            ClientMsg::Net => {
+                let st = self.net.lock().unwrap().clone();
+                Some(ServerMsg::Net {
+                    lan: commands::rank_ips(win::sys::adapters().0),
+                    public: st.public,
+                    anywhere: self.store.lock().unwrap().config().anywhere,
+                    upnp: st.upnp,
+                })
+            }
             ClientMsg::ThumbSub { on } => {
                 let out = self.out.clone();
                 toggle(&mut self.thumb, on, || thumb::subscribe(out));
