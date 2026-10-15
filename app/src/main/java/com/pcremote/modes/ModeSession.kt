@@ -32,18 +32,21 @@ import kotlinx.coroutines.launch
 
 /** A live agent connection owned by one mode screen. */
 class AgentSession(val pc: PairedPc, val conn: AgentConnection) {
-    fun send(m: Msg) = conn.send(m)
+    /** Checks the live connection state, so callbacks captured early still work once online. */
+    fun send(m: Msg) = conn.sendIfOnline(m)
 }
 
 /** Opens an agent connection for [pcId] while the calling screen is on screen. */
 @Composable
-fun rememberAgentSession(pcId: String): AgentSession? {
+fun rememberAgentSession(pcId: String, acceptsFiles: Boolean = false): AgentSession? {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val pc = remember(pcId) { PcStore.get(ctx).all().firstOrNull { it.id == pcId } } ?: return null
     val session = remember(pcId) { AgentSession(pc, AgentConnection(pc.allHosts, pc.port, pc.fingerprint, scope)) }
     DisposableEffect(session) {
         scope.launch { session.conn.hello(pc.token, Build.MODEL) }
+        // Only the Files screen takes files; elsewhere a PC→phone offer gets a clear "no"
+        if (!acceptsFiles) scope.launch { session.conn.incoming.collect { if (it is Msg.FileOffer) session.conn.send(Msg.FileReject(it.id)) } }
         onDispose { session.conn.close() }
     }
     return session

@@ -60,7 +60,8 @@ fun PadScreen(pcId: String, onBack: () -> Unit) {
     val activity = ctx as? android.app.Activity
     DisposableEffect(Unit) {
         val prev = activity?.requestedOrientation
-        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        // Fixed landscape so gyro axes always mean the same thing
+        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         onDispose { activity?.requestedOrientation = prev ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }
     }
     KeepScreenOn()
@@ -78,20 +79,21 @@ fun PadScreen(pcId: String, onBack: () -> Unit) {
 
     fun update(f: (PadState) -> PadState) {
         pad = f(pad)
-        if (online) sender.offer(pad, SystemClock.uptimeMillis())?.let { session?.send(it) }
+        sender.offer(pad, SystemClock.uptimeMillis())?.let { session?.send(it) }
     }
     LaunchedEffect(online) {
         while (online) { sender.flush(SystemClock.uptimeMillis())?.let { session?.send(it) }; delay(8) }
     }
     DisposableEffect(session) { onDispose { session?.send(Msg.PadOff(0)) } }
     Rumble(session)
-    GyroInput(current.gyro, sens) { x, y -> update { if (current.gyro == GyroUse.STEER) it.stick(true, x, it.ly / -32768f) else it.stick(false, x, y) } }
+    val gyroUse = current.gyro
+    GyroInput(gyroUse, sens) { x, y -> update { if (gyroUse == GyroUse.STEER) it.stick(true, x, it.ly / -32768f) else it.stick(false, x, y) } }
 
     val c = LocalMidnight.current
     Box(Modifier.fillMaxSize().background(c.bg).safeDrawingPadding()) {
         BoxWithConstraints(Modifier.fillMaxSize().padding(16.dp)) {
             val h = maxHeight; val w = maxWidth
-            current.elements.forEachIndexed { i, el ->
+            current.elements.forEachIndexed { i, el -> key(current.id, i) {
                 val sizeDp = h * el.size
                 val pos = Modifier.offset(w * el.x - sizeDp / 2, h * el.y - sizeDp / 2).size(sizeDp).alpha(current.opacity)
                 if (editing) {
@@ -108,7 +110,7 @@ fun PadScreen(pcId: String, onBack: () -> Unit) {
                         update { it.trigger(el.kind == ElementKind.TRIGGER_L, if (down) 1f else 0f) }
                     }
                 }
-            }
+            } }
         }
         // Top bar: back, layouts, edit
         Row(Modifier.align(Alignment.TopCenter).padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -224,16 +226,16 @@ private fun DPad(modifier: Modifier, onDirs: (Set<PadButton>) -> Unit) {
 private fun EditHandle(modifier: Modifier, el: PadElement, w: Dp, h: Dp, onMoved: (Float, Float) -> Unit) {
     val c = LocalMidnight.current
     val density = LocalDensity.current
-    var x by remember(el) { mutableFloatStateOf(el.x) }
-    var y by remember(el) { mutableFloatStateOf(el.y) }
+    var x by remember { mutableFloatStateOf(el.x) }
+    var y by remember { mutableFloatStateOf(el.y) }
     Box(
         modifier.clip(CircleShape).background(c.accent.copy(alpha = 0.25f)).border(2.dp, c.accent, CircleShape)
-            .pointerInput(el) {
+            .offset(w * (x - el.x), h * (y - el.y)) // live preview while dragging
+            .pointerInput(Unit) {
                 val wp = with(density) { w.toPx() }; val hp = with(density) { h.toPx() }
                 detectDragGestures(onDragEnd = { onMoved(x, y) }) { ch, d ->
                     ch.consume()
                     x = (x + d.x / wp).coerceIn(0.05f, 0.95f); y = (y + d.y / hp).coerceIn(0.05f, 0.95f)
-                    onMoved(x, y)
                 }
             },
         contentAlignment = Alignment.Center,

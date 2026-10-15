@@ -189,7 +189,7 @@ class MainActivity : ComponentActivity() {
             else -> null
         }
         if (up != null) {
-            if (event.action == android.view.KeyEvent.ACTION_DOWN && com.pcremote.modes.VolumeKeys.onVolumeKey(up)) return true
+            if (event.action == android.view.KeyEvent.ACTION_DOWN && com.pcremote.modes.VolumeKeys.onVolumeKey(up, event.repeatCount > 0)) return true
             if (event.action == android.view.KeyEvent.ACTION_UP && com.pcremote.modes.VolumeKeys.active) return true
         }
         return super.dispatchKeyEvent(event)

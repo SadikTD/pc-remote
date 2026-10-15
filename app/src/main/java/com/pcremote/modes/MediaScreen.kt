@@ -48,7 +48,7 @@ fun MediaScreen(pcId: String, onBack: () -> Unit, onPower: () -> Unit) {
     var media by remember { mutableStateOf(Msg.Media()) }
     ModeScaffold(R.string.pcr_mode_media, session, onBack, onPower) { state ->
         val online = state is AgentState.Online
-        val send: (Msg) -> Unit = { if (online) session?.send(it) }
+        val send: (Msg) -> Unit = remember(session) { { m: Msg -> session?.send(m); Unit } }
         LaunchedEffect(online) { if (online) session?.send(Msg.MediaSub(true)) }
         LaunchedEffect(session) { session?.conn?.incoming?.collect { if (it is Msg.Media) media = it } }
         DisposableEffect(Unit) {
@@ -124,7 +124,7 @@ private fun VolumeDialView(volume: Int, muted: Boolean, onSet: (Int) -> Unit) {
                     val center = Offset(size.width / 2f, size.height / 2f)
                     val p = change.position - center
                     val deg = Math.toDegrees(atan2(p.x.toDouble(), -p.y.toDouble())).toFloat()
-                    val v = VolumeDial.angleToVolume(deg)
+                    val v = VolumeDial.next(local, deg) ?: return@detectDragGestures // ignore wraps across the gap
                     if (v != local) {
                         if (v / 5 != local / 5) haptics.tick()
                         local = v

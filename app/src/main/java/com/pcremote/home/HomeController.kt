@@ -63,6 +63,7 @@ class HomeController(ctx: Context, private val scope: CoroutineScope, val comput
         jobs += scope.launch {
             c.incoming.collect { m ->
                 if (m is Msg.Status) streaming.value = streaming.value + (pc.id to m.streaming)
+                if (m is Msg.FileOffer) c.send(Msg.FileReject(m.id)) // files are received on the Files screen
                 if (m is Msg.Net && m.public != pc.publicHost) store.all().firstOrNull { it.id == pc.id }?.let {
                     store.upsert(it.copy(publicHost = m.public))
                 }

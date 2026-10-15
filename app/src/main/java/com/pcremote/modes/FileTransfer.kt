@@ -6,6 +6,7 @@ import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.security.MessageDigest
 import java.util.UUID
+import kotlinx.coroutines.delay
 
 /** Binary file chunk frames: `[0x01][16-byte uuid][8-byte offset BE][data]` (docs/protocol.md). */
 object FileFraming {
@@ -39,8 +40,10 @@ class FileSender(
     val size: Long,
     private val open: () -> InputStream,
     private val send: (Msg) -> Unit,
-    private val sendBinary: (ByteArray) -> Unit,
+    private val sendBinary: (ByteArray) -> Boolean,
     private val onProgress: (Float) -> Unit = {},
+    /** Bytes still queued on the socket; uploads pause above [MAX_BACKLOG] so the socket never overflows. */
+    private val backlog: () -> Long = { 0 },
 ) {
     suspend fun run(awaitReady: suspend () -> Long) {
         send(Msg.FileBegin(id.toString(), name, size))
@@ -56,7 +59,10 @@ class FileSender(
                 val end = pos + n
                 if (end > offset) {
                     val skip = (offset - pos).coerceAtLeast(0).toInt() // bytes the host already has
-                    sendBinary(FileFraming.chunk(id, pos + skip, buf.copyOfRange(skip, n), n - skip))
+                    while (backlog() > MAX_BACKLOG) delay(10)
+                    if (!sendBinary(FileFraming.chunk(id, pos + skip, buf.copyOfRange(skip, n), n - skip))) {
+                        throw java.io.IOException("connection closed")
+                    }
                     onProgress(end.toFloat() / size.coerceAtLeast(1))
                 }
                 pos = end
@@ -64,6 +70,8 @@ class FileSender(
         }
         send(Msg.FileEnd(id.toString(), hex(md.digest())))
     }
+
+    private companion object { const val MAX_BACKLOG = 4L * 1024 * 1024 }
 }
 
 /** PC → phone download: writes chunks in order and checks the final hash. */

@@ -34,6 +34,8 @@ interface Ws {
     fun send(text: String): Boolean
     fun send(bytes: ByteArray): Boolean
     fun close()
+    /** Bytes queued but not yet written to the network. */
+    fun queueSize(): Long = 0
 }
 
 interface WsListener {
@@ -72,6 +74,7 @@ object OkHttpWs : WsFactory {
             override fun send(text: String) = ws.send(text)
             override fun send(bytes: ByteArray) = ws.send(bytes.toByteString())
             override fun close() { ws.close(1000, null) }
+            override fun queueSize() = ws.queueSize()
         }
     }
 }
@@ -93,6 +96,12 @@ class AgentConnection(
     val incoming: SharedFlow<Msg> = _incoming
     private val _binary = MutableSharedFlow<ByteArray>(extraBufferCapacity = 8)
     val binary: SharedFlow<ByteArray> = _binary
+
+    /**
+     * If set, every binary frame goes here synchronously on the socket thread (no drops);
+     * file transfers use this. Otherwise frames go to [binary], which may drop under load.
+     */
+    @Volatile var binaryListener: ((ByteArray) -> Unit)? = null
 
     @Volatile private var ws: Ws? = null
     /** The host from [hosts] that the current connection reached. */
@@ -144,7 +153,7 @@ class AgentConnection(
         override fun onBinary(b: ByteArray) {
             if (id != session) return
             rxSincePing = true
-            _binary.tryEmit(b)
+            binaryListener?.invoke(b) ?: _binary.tryEmit(b)
         }
 
         override fun onFailure(t: Throwable, certMismatch: Boolean) {
@@ -257,6 +266,11 @@ class AgentConnection(
     }
 
     fun send(m: Msg): Boolean = ws?.send(Wire.encode(m)) ?: false
+
+    /** Sends only while authenticated; reads the live state, so it's safe to capture in long-lived callbacks. */
+    fun sendIfOnline(m: Msg): Boolean = _state.value is AgentState.Online && send(m)
+
+    fun backlog(): Long = ws?.queueSize() ?: 0
     fun sendBinary(b: ByteArray): Boolean = ws?.send(b) ?: false
 
     fun close() {

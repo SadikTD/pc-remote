@@ -17,6 +17,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -30,11 +31,14 @@ import com.pcremote.ui.theme.MidnightShapes
 
 @Composable
 fun FilesScreen(pcId: String, onBack: () -> Unit, onPower: () -> Unit, initial: List<Uri> = emptyList()) {
-    val session = rememberAgentSession(pcId)
+    val session = rememberAgentSession(pcId, acceptsFiles = true)
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
-    val controller = remember(session) { session?.let { FilesController(ctx, it.conn, scope) } }
-    LaunchedEffect(controller) { if (initial.isNotEmpty()) controller?.send(initial) }
+    val controller = remember(session) { session?.let { FilesController(ctx, it.conn, scope, pcId) } }
+    DisposableEffect(controller) { onDispose { controller?.close() } }
+    // Queue shared files once, even if the screen is recreated
+    var queuedInitial by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(controller) { if (!queuedInitial && initial.isNotEmpty()) { controller?.send(initial); queuedInitial = true } }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris -> controller?.send(uris) }
     ModeScaffold(R.string.pcr_mode_files, session, onBack, onPower) {
         FilesBody(controller?.transfers ?: emptyList()) { picker.launch(arrayOf("*/*")) }

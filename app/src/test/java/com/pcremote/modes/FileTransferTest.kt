@@ -29,7 +29,7 @@ class FileTransferTest {
 
     @Test fun resumesFromServerOffset() = runTest {
         val sent = mutableListOf<Msg>(); val bins = mutableListOf<ByteArray>()
-        val s = FileSender(id, "a.bin", data.size.toLong(), { ByteArrayInputStream(data) }, { sent += it }, { bins += it })
+        val s = FileSender(id, "a.bin", data.size.toLong(), { ByteArrayInputStream(data) }, { sent += it }, { bins += it; true })
         s.run { 300_000L }
         assertEquals(Msg.FileBegin(id.toString(), "a.bin", data.size.toLong()), sent.first())
         val first = FileFraming.parse(bins.first())!!
@@ -41,7 +41,7 @@ class FileTransferTest {
 
     @Test fun `streamed hash equals whole-file hash from zero`() = runTest {
         val sent = mutableListOf<Msg>()
-        FileSender(id, "a.bin", data.size.toLong(), { ByteArrayInputStream(data) }, { sent += it }, {}).run { 0L }
+        FileSender(id, "a.bin", data.size.toLong(), { ByteArrayInputStream(data) }, { sent += it }, { true }).run { 0L }
         assertEquals(sha(data), (sent.last() as Msg.FileEnd).sha256)
     }
 

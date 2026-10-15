@@ -62,7 +62,7 @@ private const val SENTINEL = "​​" // keeps backspace observable in an empty 
 fun RemoteScreen(pcId: String, onBack: () -> Unit, onPower: () -> Unit) {
     val session = rememberAgentSession(pcId)
     ModeScaffold(R.string.pcr_mode_remote, session, onBack, onPower) { state ->
-        val send: (Msg) -> Unit = { if (state is AgentState.Online) session?.send(it) }
+        val send: (Msg) -> Unit = remember(session) { { m: Msg -> session?.send(m); Unit } }
         RemoteBody(send)
     }
 }

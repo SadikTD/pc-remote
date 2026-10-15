@@ -165,4 +165,25 @@ class AgentConnectionTest {
         f.slow!!.deliverClose()
         assertEquals(AgentState.Failed(FailReason.UNREACHABLE), c.state.value)
     }
+
+    @Test fun everyBinaryFrameReachesTheListener() = runTest {
+        val f = FakeWs(mapOf("h1" to "ok"), server)
+        val c = conn(f, listOf("h1"))
+        var got = 0
+        c.binaryListener = { got++ }
+        c.hello("good", "Pixel")
+        repeat(100) { f.live!!.l.onBinary(ByteArray(10)) }
+        assertEquals(100, got)
+        c.close()
+    }
+
+    @Test fun sendIfOnlineDropsWhileConnecting() = runTest {
+        val f = FakeWs(mapOf("h1" to "ok"), server)
+        val c = conn(f, listOf("h1"))
+        assertEquals(false, c.sendIfOnline(Msg.Key(1, true)))
+        c.hello("good", "Pixel")
+        assertEquals(true, c.sendIfOnline(Msg.Key(1, true)))
+        assertTrue(f.live!!.sent.contains(Msg.Key(1, true)))
+        c.close()
+    }
 }
