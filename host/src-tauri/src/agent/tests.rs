@@ -254,3 +254,22 @@ async fn wrong_path_is_rejected() {
         .unwrap();
     assert!(tokio_tungstenite::client_async("wss://x/other", tls).await.is_err());
 }
+
+#[tokio::test]
+async fn pair_caps_device_name() {
+    let r = rig("longname", Duration::from_secs(30), true).await;
+    let otp = r.store.lock().unwrap().new_otp();
+    let mut ws = connect(r.handle.addr, &r.fp).await;
+    send(&mut ws, json!({"t":"pair","otp":otp,"device":"é".repeat(500),"pin":"1"})).await;
+    let token = recv(&mut ws).await.unwrap()["token"].as_str().unwrap().to_string();
+    let id = r.store.lock().unwrap().auth(&token).unwrap();
+    assert_eq!(r.store.lock().unwrap().device_name(&id).unwrap().chars().count(), 40);
+}
+
+#[tokio::test]
+async fn oversized_frame_before_auth_closes() {
+    let r = rig("big", Duration::from_secs(30), true).await;
+    let mut ws = connect(r.handle.addr, &r.fp).await;
+    let _ = ws.send(Message::text("x".repeat(MAX_FRAME + 1))).await;
+    assert_eq!(recv(&mut ws).await, None);
+}

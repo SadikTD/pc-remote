@@ -1,6 +1,6 @@
 //! One phone connection: TLS → WebSocket `/v1` → pair|hello → message loop.
 
-use super::{Ctx, Event, Out, CAPS};
+use super::{Ctx, Event, Out, CAPS, MAX_FRAME};
 use crate::proto::{ClientMsg, ServerMsg};
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
@@ -9,6 +9,7 @@ use tokio::sync::mpsc;
 use tokio::time::timeout;
 use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
 use tokio_tungstenite::tungstenite::http::StatusCode;
+use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tokio_tungstenite::tungstenite::Message;
 
 type Ws = tokio_tungstenite::WebSocketStream<tokio_rustls::server::TlsStream<TcpStream>>;
@@ -31,6 +32,10 @@ async fn next_text(ws: &mut Ws, idle: std::time::Duration) -> Option<Option<Stri
     }
 }
 
+fn ws_config() -> WebSocketConfig {
+    WebSocketConfig::default().max_message_size(Some(MAX_FRAME)).max_frame_size(Some(MAX_FRAME))
+}
+
 pub(crate) async fn run(tcp: TcpStream, acceptor: tokio_rustls::TlsAcceptor, ctx: Arc<Ctx>) {
     let Ok(Ok(tls)) = timeout(ctx.idle, acceptor.accept(tcp)).await else { return };
     #[allow(clippy::result_large_err)] // signature fixed by tungstenite
@@ -43,7 +48,7 @@ pub(crate) async fn run(tcp: TcpStream, acceptor: tokio_rustls::TlsAcceptor, ctx
             Err(e)
         }
     };
-    let Ok(Ok(mut ws)) = timeout(ctx.idle, tokio_tungstenite::accept_hdr_async(tls, only_v1)).await else { return };
+    let Ok(Ok(mut ws)) = timeout(ctx.idle, tokio_tungstenite::accept_hdr_async_with_config(tls, only_v1, Some(ws_config()))).await else { return };
 
     let first = loop {
         match next_text(&mut ws, ctx.idle).await {
@@ -55,6 +60,7 @@ pub(crate) async fn run(tcp: TcpStream, acceptor: tokio_rustls::TlsAcceptor, ctx
     let (tx, mut rx) = mpsc::unbounded_channel();
     let device = match first {
         Some(ClientMsg::Pair { otp, device, pin }) => {
+            let device: String = device.trim().chars().take(40).collect();
             if !ctx.store.lock().unwrap().take_otp(&otp) {
                 return fail(&mut ws, "bad_otp", "pairing code is wrong or expired").await;
             }

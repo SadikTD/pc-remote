@@ -33,6 +33,9 @@ pub trait Handlers: Send + Sync + 'static {
     fn power(&self, action: &str) -> Result<(), &'static str>;
 }
 
+/// Largest WebSocket message accepted: an 8 MB clipboard image as base64, plus slack.
+pub const MAX_FRAME: usize = 12 << 20;
+
 /// Capabilities this build implements; the rest answer `unsupported`.
 pub const CAPS: &[&str] = &["input", "power"];
 

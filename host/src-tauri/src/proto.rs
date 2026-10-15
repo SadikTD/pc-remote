@@ -17,9 +17,9 @@ pub enum ClientMsg {
     MouseButton { b: String, down: bool },
     #[serde(rename = "mouse.scroll")]
     MouseScroll {
-        #[serde(default)]
+        #[serde(default, deserialize_with = "null_as_default")]
         dy: i32,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "null_as_default")]
         dx: i32,
     },
     #[serde(rename = "key")]
@@ -56,6 +56,11 @@ pub enum ClientMsg {
     ThumbSub { on: bool },
     #[serde(rename = "net")]
     Net,
+}
+
+/// The phone may send `null` for optional fields; treat it like an absent field.
+fn null_as_default<'de, D: serde::Deserializer<'de>, T: Default + Deserialize<'de>>(d: D) -> Result<T, D::Error> {
+    Ok(Option::<T>::deserialize(d)?.unwrap_or_default())
 }
 
 impl ClientMsg {
@@ -299,6 +304,13 @@ mod tests {
         assert!(serde_json::from_str::<ClientMsg>(r#"{"x":1}"#).is_err());
         assert_eq!(c(r#"{"t":"ping","extra":[1,2]}"#), ClientMsg::Ping);
         assert_eq!(c(r#"{"t":"key","vk":13,"down":false,"rep":3}"#), ClientMsg::Key { vk: 13, down: false });
+    }
+
+    #[test]
+    fn null_optional_fields_are_absent() {
+        assert_eq!(c(r#"{"t":"mouse.scroll","dy":120,"dx":null}"#), ClientMsg::MouseScroll { dy: 120, dx: 0 });
+        assert_eq!(c(r#"{"t":"mouse.scroll","dx":-5}"#), ClientMsg::MouseScroll { dy: 0, dx: -5 });
+        assert_eq!(c(r#"{"t":"media.cmd","c":"mute","v":null}"#), ClientMsg::MediaCmd { c: "mute".into(), v: None });
     }
 
     #[test]
