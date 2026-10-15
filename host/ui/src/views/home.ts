@@ -53,7 +53,8 @@ export function home(state: State): HTMLElement {
     h("p.lead", {}, "Open PC Remote on your phone and scan this code."),
     left,
     connected.length
-      ? h("ul.list.compact", {}, ...connected.map((d) => h("li.row", {}, h("i.dot.live"), h("span.grow", {}, d.name))))
+      ? h("ul.list.compact", {}, ...connected.map((d) => h("li.row", {}, h("i.dot.live"), h("span.grow", {}, d.name),
+          h("button.ghost", { onclick: () => invoke("send_file", { device: d.id }) }, "Send file"))))
       : null,
   );
 }

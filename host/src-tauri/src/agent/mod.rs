@@ -49,6 +49,10 @@ impl Outbox {
     pub async fn send_bin(&self, b: Vec<u8>) -> bool {
         self.bin.send(b).await.is_ok()
     }
+    /// For blocking threads (file upload).
+    pub fn send_bin_blocking(&self, b: Vec<u8>) -> bool {
+        self.bin.blocking_send(b).is_ok()
+    }
     pub fn is_closed(&self) -> bool {
         self.ctl.is_closed()
     }

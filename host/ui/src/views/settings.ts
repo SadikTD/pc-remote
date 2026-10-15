@@ -22,6 +22,15 @@ export async function settings(): Promise<HTMLElement> {
         ...options.map(([v, t]) => h("option", { value: v, selected: v === value }, t))),
     );
 
+  const folder = h("span.hint.path", { title: config.files_dir }, config.files_dir);
+  const change = async () => {
+    const dir = await invoke<string | null>("pick_files_dir");
+    if (dir) {
+      config.files_dir = dir;
+      folder.textContent = dir;
+      folder.title = dir;
+    }
+  };
   return h(
     "section.view",
     {},
@@ -43,7 +52,8 @@ export async function settings(): Promise<HTMLElement> {
     h(
       "div.group",
       {},
-      h("div.row", {}, h("span.grow", {}, h("span.label", {}, "Received files"), h("span.hint.path", { title: config.files_dir }, config.files_dir)),
+      h("div.row", {}, h("span.grow", {}, h("span.label", {}, "Received files"), folder),
+        h("button.ghost", { onclick: change }, "Change"),
         h("button.ghost", { onclick: () => invoke("open_files_dir") }, "Open")),
     ),
     note,

@@ -4,17 +4,19 @@ use crate::agent::{BoxFut, Handlers, Outbox, Session};
 use crate::proto::{ClientMsg, PcInfo, ServerMsg};
 use crate::store::Store;
 use crate::sunshine::{self, Sunshine};
+use crate::files::{self, Incoming, Outgoing};
 use crate::{input, media, power, win};
 use std::sync::{Arc, Mutex};
 
 pub struct Host {
     pub store: Arc<Mutex<Store>>,
     pub sunshine: Arc<Sunshine>,
+    pub outgoing: Outgoing,
 }
 
 impl Host {
     pub fn new(store: Arc<Mutex<Store>>, sunshine: Arc<Sunshine>) -> Self {
-        Host { store, sunshine }
+        Host { store, sunshine, outgoing: Outgoing::default() }
     }
 }
 
@@ -44,11 +46,19 @@ impl Handlers for Host {
     }
 
     fn caps(&self) -> Vec<String> {
-        ["input", "power", "media"].map(String::from).to_vec()
+        ["input", "power", "media", "files"].map(String::from).to_vec()
     }
 
     fn session(&self, _device: &str, out: Outbox) -> Box<dyn Session> {
-        Box::new(HostSession { input: input::Input::new(input::SendInputEmitter), out, media: None })
+        let dir = self.store.lock().unwrap().config().files_dir.clone();
+        Box::new(HostSession {
+            input: input::Input::new(input::SendInputEmitter),
+            out,
+            media: None,
+            store: self.store.clone(),
+            incoming: Incoming::new(dir.into()),
+            outgoing: self.outgoing.clone(),
+        })
     }
 }
 
@@ -56,6 +66,9 @@ pub struct HostSession {
     input: input::Input<input::SendInputEmitter>,
     out: Outbox,
     media: Option<tokio::task::JoinHandle<()>>,
+    store: Arc<Mutex<Store>>,
+    incoming: Incoming,
+    outgoing: Outgoing,
 }
 
 /// Starts or stops a per-session subscription task.
@@ -75,6 +88,10 @@ impl Drop for HostSession {
 }
 
 impl Session for HostSession {
+    fn on_binary(&mut self, b: &[u8]) -> Option<ServerMsg> {
+        self.incoming.chunk(b)
+    }
+
     fn on_msg(&mut self, m: ClientMsg) -> Option<ServerMsg> {
         let of = m.t();
         let err = |code: &str, msg: &str| Some(ServerMsg::error(code, msg, Some(of)));
@@ -100,6 +117,30 @@ impl Session for HostSession {
                 }
                 Err(code) => err(code, "unknown media command"),
             },
+            ClientMsg::FileBegin { id, name, size } => Some(if self.store.lock().unwrap().config().allow_files {
+                self.incoming.begin(&id, &name, size)
+            } else {
+                ServerMsg::FileError { id, code: "denied".into() }
+            }),
+            ClientMsg::FileEnd { id, sha256 } => Some(self.incoming.end(&id, &sha256)),
+            ClientMsg::FileAccept { id, offset } => {
+                let Some(path) = self.outgoing.lock().unwrap().remove(&id) else {
+                    return Some(ServerMsg::FileError { id, code: "denied".into() });
+                };
+                let out = self.out.clone();
+                tokio::task::spawn_blocking(move || {
+                    let Some(key) = files::parse_uuid(&id) else { return };
+                    match files::stream(&path, &key, offset, &mut |f| out.send_bin_blocking(f)) {
+                        Ok(sha256) => out.send(ServerMsg::FileEnd { id, sha256 }),
+                        Err(_) => out.send(ServerMsg::FileError { id, code: "denied".into() }),
+                    };
+                });
+                None
+            }
+            ClientMsg::FileReject { id } => {
+                self.outgoing.lock().unwrap().remove(&id);
+                None
+            }
             _ => err("unsupported", "not supported by this PC yet"),
         }
     }

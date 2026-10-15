@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod commands;
+pub mod files;
 pub mod host;
 pub mod input;
 pub mod media;
@@ -26,6 +27,7 @@ pub struct App {
     pub agent: AgentHandle,
     pub sunshine: Arc<Sunshine>,
     pub fp: String,
+    pub outgoing: files::Outgoing,
 }
 
 pub fn data_dir() -> PathBuf {
@@ -70,6 +72,11 @@ fn ensure_sunshine_creds(dir: PathBuf, sun: Arc<Sunshine>) {
     });
 }
 
+fn send_arg(argv: &[String]) -> Option<PathBuf> {
+    let i = argv.iter().position(|a| a == "--send")?;
+    argv.get(i + 1).map(PathBuf::from)
+}
+
 pub fn run() {
     let dir = data_dir();
     if std::env::args().any(|a| a == "--init-sunshine") {
@@ -78,7 +85,15 @@ pub fn run() {
     }
     let hidden = std::env::args().any(|a| a == "--hidden");
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _, _| show_window(app)))
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _| {
+            // Explorer "Send to phone" starts a second instance with --send <path>.
+            match send_arg(&argv) {
+                Some(path) => {
+                    let _ = commands::offer_to(&app.state::<App>(), None, &path);
+                }
+                None => show_window(app),
+            }
+        }))
         .invoke_handler(tauri::generate_handler![
             commands::get_state,
             commands::new_qr,
@@ -89,6 +104,8 @@ pub fn run() {
             commands::open_files_dir,
             commands::check_update,
             commands::open_release,
+            commands::send_file,
+            commands::pick_files_dir,
         ])
         .setup(move |app| {
             let identity = tls::Identity::load_or_create(&dir)?;
@@ -96,6 +113,8 @@ pub fn run() {
             let sun = Arc::new(Sunshine::local(None));
             ensure_sunshine_creds(dir.clone(), sun.clone());
             let host = Arc::new(host::Host::new(store.clone(), sun.clone()));
+            let outgoing = host.outgoing.clone();
+            let _ = win::sys::register_send_verb();
             let agent = tauri::async_runtime::block_on(agent::Agent::start(
                 &identity,
                 store.clone(),
@@ -104,7 +123,7 @@ pub fn run() {
                 Duration::from_secs(30),
             ))?;
             let mut events = agent.events();
-            app.manage(App { store, agent: agent.clone(), sunshine: sun, fp: identity.fingerprint_hex.clone() });
+            app.manage(App { store, agent: agent.clone(), sunshine: sun, fp: identity.fingerprint_hex.clone(), outgoing });
 
             let open = MenuItem::with_id(app, "open", "Open", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;

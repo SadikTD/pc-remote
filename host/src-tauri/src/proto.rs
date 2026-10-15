@@ -141,6 +141,8 @@ pub enum ServerMsg {
     FileError { id: String, code: String },
     #[serde(rename = "file.offer")]
     FileOffer { id: String, name: String, size: u64 },
+    #[serde(rename = "file.end")]
+    FileEnd { id: String, sha256: String },
     #[serde(rename = "ok")]
     Ok { of: String },
     #[serde(rename = "status")]
@@ -287,6 +289,7 @@ mod tests {
             s(&ServerMsg::FileOffer { id: "u".into(), name: "n".into(), size: 1 }),
             json!({"t":"file.offer","id":"u","name":"n","size":1})
         );
+        assert_eq!(s(&ServerMsg::FileEnd { id: "u".into(), sha256: "ab".into() }), json!({"t":"file.end","id":"u","sha256":"ab"}));
         assert_eq!(s(&ServerMsg::Ok { of: "power".into() }), json!({"t":"ok","of":"power"}));
         assert_eq!(
             s(&ServerMsg::Status { streaming: true, to: "Pixel 8".into() }),

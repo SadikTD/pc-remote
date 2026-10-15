@@ -46,6 +46,7 @@
 !macro NSIS_HOOK_PREUNINSTALL
   nsExec::Exec 'netsh advfirewall firewall delete rule name="${PCR_FW_RULE}"'
   DeleteRegValue HKCU "${PCR_RUN_KEY}" "PC Remote"
+  DeleteRegKey HKCU "Software\Classes\*\shell\PCRemote.Send"
 
   MessageBox MB_YESNO|MB_ICONQUESTION "Also remove Sunshine (screen sharing)?$\r$\n$\r$\nChoose No if other apps use it." /SD IDNO IDNO pcr_keep_sunshine
     DetailPrint "Removing Sunshine…"

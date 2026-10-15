@@ -142,6 +142,41 @@ pub fn run_elevated(args: &str) -> bool {
     true
 }
 
+/// The system file (or folder) picker. Blocking and modal to `owner`; call on the UI thread.
+pub fn pick(owner: Option<windows::Win32::Foundation::HWND>, folder: bool) -> Option<std::path::PathBuf> {
+    use windows::Win32::System::Com::{CoCreateInstance, CoTaskMemFree, CLSCTX_INPROC_SERVER};
+    use windows::Win32::UI::Shell::{FileOpenDialog, IFileOpenDialog, FOS_PICKFOLDERS, SIGDN_FILESYSPATH};
+    // SAFETY: COM calls on the UI thread (already COM-initialised by the window system);
+    // the returned path buffer is freed with CoTaskMemFree.
+    unsafe {
+        let d: IFileOpenDialog = CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER).ok()?;
+        if folder {
+            d.SetOptions(d.GetOptions().ok()? | FOS_PICKFOLDERS).ok()?;
+        }
+        d.Show(owner).ok()?;
+        let p = d.GetResult().ok()?.GetDisplayName(SIGDN_FILESYSPATH).ok()?;
+        let s = p.to_string().ok();
+        CoTaskMemFree(Some(p.0 as _));
+        s.map(Into::into)
+    }
+}
+
+const SEND_VERB: PCWSTR = w!(r"Software\Classes\*\shell\PCRemote.Send");
+const SEND_CMD: PCWSTR = w!(r"Software\Classes\*\shell\PCRemote.Send\command");
+
+/// Explorer right-click → "Send to phone" (per user): runs `"exe" --send "%1"`.
+pub fn register_send_verb() -> windows::core::Result<()> {
+    let exe = std::env::current_exe().map_err(|e| windows::core::Error::new(windows::core::HRESULT(-1), e.to_string()))?;
+    let set = |key: PCWSTR, name: PCWSTR, v: String| {
+        let w: Vec<u16> = v.encode_utf16().chain([0]).collect();
+        // SAFETY: valid NUL-terminated wide strings for the call.
+        unsafe { RegSetKeyValueW(HKEY_CURRENT_USER, key, name, REG_SZ.0, Some(w.as_ptr().cast()), (w.len() * 2) as u32).ok() }
+    };
+    set(SEND_VERB, PCWSTR::null(), "Send to phone".into())?;
+    set(SEND_VERB, w!("Icon"), format!("\"{}\"", exe.display()))?;
+    set(SEND_CMD, PCWSTR::null(), format!("\"{}\" --send \"%1\"", exe.display()))
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

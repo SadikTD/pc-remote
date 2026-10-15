@@ -153,6 +153,37 @@ pub fn open_files_dir(app: State<'_, App>) -> Result<(), String> {
     std::process::Command::new("explorer.exe").arg(&dir).spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 
+/// Offers `path` to `device`, or to every connected phone; returns how many got the offer.
+pub fn offer_to(app: &App, device: Option<&str>, path: &std::path::Path) -> Result<usize, String> {
+    let mut devices = device.map(|d| vec![d.to_string()]).unwrap_or_else(|| app.agent.connected());
+    devices.dedup();
+    let mut sent = 0;
+    for d in devices {
+        let m = crate::files::offer(&app.outgoing, path).map_err(|e| e.to_string())?;
+        sent += app.agent.send(&d, m).min(1);
+    }
+    Ok(sent)
+}
+
+/// "Send file" on a connected phone: system file picker, then `file.offer`.
+#[tauri::command]
+pub fn send_file(app: State<'_, App>, window: tauri::WebviewWindow, device: String) -> Result<bool, String> {
+    let Some(path) = crate::win::sys::pick(window.hwnd().ok(), false) else { return Ok(false) };
+    offer_to(&app, Some(&device), &path).map(|n| n > 0)
+}
+
+/// Settings → Received files → Change.
+#[tauri::command]
+pub fn pick_files_dir(app: State<'_, App>, window: tauri::WebviewWindow) -> Result<Option<String>, String> {
+    let Some(dir) = crate::win::sys::pick(window.hwnd().ok(), true) else { return Ok(None) };
+    let dir = dir.to_string_lossy().into_owned();
+    let mut store = app.store.lock().unwrap();
+    let mut cfg = store.config().clone();
+    cfg.files_dir = dir.clone();
+    store.set_config(cfg).map_err(|e| e.to_string())?;
+    Ok(Some(dir))
+}
+
 /// Opens the project's GitHub releases page in the default browser.
 #[tauri::command]
 pub fn open_release(url: String) -> Result<(), String> {
