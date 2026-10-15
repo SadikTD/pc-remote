@@ -318,4 +318,11 @@
     <string name="pcr_retry">Retry</string>
     <string name="pcr_close">Close</string>
     <string name="pcr_reconnecting">Reconnecting… (%1$d/%2$d)</string>
+    <string name="pcr_settings">Settings</string>
+    <string name="pcr_auto_quality">Automatic quality</string>
+    <string name="pcr_auto_quality_desc">Picks the best preset for your Wi-Fi each time you connect</string>
+    <string name="pcr_preset_SMOOTH">Smooth: 720p · 60 FPS · lowest lag</string>
+    <string name="pcr_preset_SHARP">Sharp: 1080p · 60 FPS · needs 5 GHz Wi-Fi</string>
+    <string name="pcr_preset_BATTERY">Battery saver: 720p · 30 FPS</string>
+    <string name="pcr_advanced">Advanced settings</string>
 </resources>
