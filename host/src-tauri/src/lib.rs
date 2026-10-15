@@ -10,6 +10,7 @@ pub mod power;
 pub mod proto;
 pub mod store;
 pub mod sunshine;
+pub mod thumb;
 pub mod tls;
 pub mod win;
 

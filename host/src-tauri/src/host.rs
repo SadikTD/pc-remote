@@ -6,7 +6,7 @@ use crate::store::Store;
 use crate::sunshine::{self, Sunshine};
 use crate::files::{self, Incoming, Outgoing};
 use crate::pad::{self, Pads};
-use crate::{clip, input, media, power, win};
+use crate::{clip, input, media, power, thumb, win};
 use std::sync::{Arc, Mutex};
 
 pub struct Host {
@@ -50,7 +50,7 @@ impl Handlers for Host {
     }
 
     fn caps(&self) -> Vec<String> {
-        let mut c: Vec<String> = ["input", "power", "media", "files", "clip"].map(String::from).to_vec();
+        let mut c: Vec<String> = ["input", "power", "media", "files", "clip", "thumb"].map(String::from).to_vec();
         if self.pads.is_some() {
             c.push("pad".into());
         }
@@ -75,6 +75,7 @@ impl Handlers for Host {
             clip: None,
             sid: u64::from_le_bytes(crate::store::random::<8>()),
             pads,
+            thumb: None,
         })
     }
 }
@@ -90,6 +91,7 @@ pub struct HostSession {
     /// Tags this phone's clipboard writes so they are not echoed back to it.
     sid: u64,
     pads: Option<Pads>,
+    thumb: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl HostSession {
@@ -112,6 +114,7 @@ impl Drop for HostSession {
     fn drop(&mut self) {
         toggle(&mut self.media, false, || unreachable!());
         toggle(&mut self.clip, false, || unreachable!());
+        toggle(&mut self.thumb, false, || unreachable!());
         if let Some(p) = self.pads.as_mut() {
             p.linger(std::time::Duration::from_secs(5));
         }
@@ -148,6 +151,11 @@ impl Session for HostSession {
                 }
                 Err(code) => err(code, "unknown media command"),
             },
+            ClientMsg::ThumbSub { on } => {
+                let out = self.out.clone();
+                toggle(&mut self.thumb, on, || thumb::subscribe(out));
+                None
+            }
             ClientMsg::Pad { id, btn, lt, rt, lx, ly, rx, ry } => {
                 let Some(p) = self.pads.as_mut() else { return err("unsupported", "gamepad driver (ViGEmBus) is not installed") };
                 p.pad(id, &pad::PadState { btn, lt, rt, lx, ly, rx, ry }).err().and_then(|c| err(c, "gamepad error"))
@@ -220,5 +228,27 @@ impl Session for HostSession {
             }
             _ => err("unsupported", "not supported by this PC yet"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::toggle;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn subscription_starts_restarts_and_stops() {
+        let mut slot = None;
+        toggle(&mut slot, true, || tokio::spawn(tokio::time::sleep(Duration::from_secs(60))));
+        let first = slot.as_ref().unwrap().id();
+        toggle(&mut slot, true, || tokio::spawn(tokio::time::sleep(Duration::from_secs(60))));
+        assert_ne!(slot.as_ref().unwrap().id(), first, "re-subscribing replaces the timer, never doubles it");
+        let h = slot.take().unwrap();
+        let abort = h.abort_handle();
+        slot = Some(h);
+        toggle(&mut slot, false, || unreachable!());
+        assert!(slot.is_none());
+        tokio::task::yield_now().await;
+        assert!(abort.is_finished(), "unsubscribing stops the timer");
     }
 }
