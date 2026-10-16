@@ -56,6 +56,22 @@ class V3Test {
         assertEquals("""{"mac":"AA:BB:CC:DD:EE:FF"}""", body)
     }
 
+    @Test fun `webhook link wakes without a token`() {
+        val kv = object : com.pcremote.agent.KeyValue {
+            val m = mutableMapOf<String, String>()
+            override fun get(key: String) = m[key]
+            override fun put(key: String, value: String?) { if (value == null) m.remove(key) else m[key] = value }
+        }
+        val box = object : com.pcremote.agent.SecretBox { override fun seal(plain: String) = plain; override fun open(sealed: String) = sealed }
+        val ha = HomeAssistant(kv, box)
+        ha.url = "ha.x/api/webhook/abc"
+        assertTrue(ha.isWebhook); assertTrue(ha.configured)
+        ha.url = "ha.x"
+        assertFalse(ha.configured) // an address needs a token
+        val r = HomeAssistant.webhook("https://ha.x/api/webhook/abc")
+        assertEquals("POST", r.method); assertNull(r.header("Authorization"))
+    }
+
     @Test fun `v3 messages on the wire`() {
         assertEquals("""{"t":"unlock","secret":"1234"}""", Wire.encode(Msg.Unlock("1234")))
         assertEquals(Msg.Lock(true), Wire.decode("""{"t":"lock","locked":true}"""))

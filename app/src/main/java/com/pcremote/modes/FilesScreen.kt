@@ -162,12 +162,14 @@ private fun Browser(hub: TransferHub) {
             Text(if (path.isEmpty()) stringResource(R.string.pcr_files_this_pc) else path, color = c.text, style = MaterialTheme.typography.titleMedium,
                 maxLines = 1, overflow = TextOverflow.StartEllipsis, modifier = Modifier.weight(1f).padding(start = 4.dp))
         }
+        // read once: the LazyColumn builder runs later, when `entries` may already be cleared for the next folder
+        val list = entries
         when {
             failed -> Text(stringResource(R.string.pcr_files_browse_failed), color = c.textDim, modifier = Modifier.padding(24.dp))
-            entries == null -> Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = c.accent) }
-            entries!!.isEmpty() -> Text(stringResource(R.string.pcr_files_empty), color = c.textDim, modifier = Modifier.padding(24.dp))
+            list == null -> Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = c.accent) }
+            list.isEmpty() -> Text(stringResource(R.string.pcr_files_empty), color = c.textDim, modifier = Modifier.padding(24.dp))
             else -> LazyColumn(contentPadding = PaddingValues(16.dp, 0.dp, 16.dp, 24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                items(entries!!, key = { it.path }) { e ->
+                items(list, key = { it.path }) { e ->
                     Row(Modifier.fillMaxWidth().glass(MidnightShapes.control).clickable(enabled = e.dir) { stack.add(path); path = e.path }.padding(start = 14.dp, top = 6.dp, bottom = 6.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         Icon(if (e.dir) Icons.Rounded.Folder else Icons.AutoMirrored.Rounded.InsertDriveFile, null, tint = if (e.dir) c.accent else c.textDim)

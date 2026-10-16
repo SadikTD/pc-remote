@@ -122,7 +122,7 @@
     <string name="pcr_pad_shooter">Shooter</string>
     <string name="pcr_pad_minimal">Minimal</string>
     <string name="pcr_files_send">Move files to your PC</string>
-    <string name="pcr_files_send_desc">Photos, videos, documents. They land in your PC\'s Downloads › PC Remote folder.</string>
+    <string name="pcr_files_send_desc">Files and whole folders land in Downloads › PC Remote on the PC. Transfers keep going in the background.</string>
     <string name="pcr_files_recent">Transfers</string>
     <string name="pcr_files_sent">Sent</string>
     <string name="pcr_files_saved">Saved to Downloads/PC Remote</string>
@@ -190,9 +190,9 @@
     <string name="pcr_unlock_saved_for">PIN saved</string>
 
     <string name="pcr_set_wake">Wake from anywhere</string>
-    <string name="pcr_ha_desc">A PC that\'s shut down can only be woken from its own network. Home Assistant is there all the time, so the Wake button asks it to send the wake signal. Add wake_on_lan: to its configuration.yaml, then create a long-lived token under Profile › Security.</string>
-    <string name="pcr_ha_url">Home Assistant address</string>
-    <string name="pcr_ha_token">Long-lived access token</string>
+    <string name="pcr_ha_desc">A PC that\'s shut down can only be woken from its own network. Home Assistant is there all the time, so the Wake button asks it to send the wake signal. Paste the webhook link of a Home Assistant automation that presses your PC\'s Wake on LAN button (Settings › Automations › the automation › its webhook trigger › copy). Away from home, the phone must be able to reach Home Assistant, for example with Tailscale on.</string>
+    <string name="pcr_ha_url">Wake link or Home Assistant address</string>
+    <string name="pcr_ha_token">Access token (only for an address)</string>
 
     <string name="pcr_update_check">Check for updates</string>
     <string name="pcr_update_check_desc">Updates install by themselves every few hours</string>

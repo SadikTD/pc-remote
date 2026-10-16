@@ -2896,7 +2896,7 @@ dependencies = [
 
 [[package]]
 name = "pc-remote-host"
-version = "3.0.1"
+version = "3.0.2"
 dependencies = [
  "base64 0.23.1",
  "futures-util",
