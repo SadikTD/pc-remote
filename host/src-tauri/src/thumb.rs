@@ -45,6 +45,11 @@ pub fn jpeg(rgb: &[u8], w: u32, h: u32) -> Option<Vec<u8>> {
     Some(buf)
 }
 
+/// True if every sampled pixel is black (what DXGI returns before a frame has been presented).
+fn is_black(bgra: &[u8]) -> bool {
+    bgra.as_chunks::<4>().0.iter().step_by(97).all(|p| p[0] < 4 && p[1] < 4 && p[2] < 4)
+}
+
 /// One BGRA frame of the primary display via DXGI Desktop Duplication. Every resource
 /// is created for this call and released after it, so nothing is held between thumbnails.
 fn capture() -> Option<(Vec<u8>, u32, u32, usize)> {
@@ -60,10 +65,21 @@ fn capture() -> Option<(Vec<u8>, u32, u32, usize)> {
         D3D11CreateDevice(&adapter, D3D_DRIVER_TYPE_UNKNOWN, Default::default(), D3D11_CREATE_DEVICE_BGRA_SUPPORT, None, D3D11_SDK_VERSION, Some(&mut dev), None, Some(&mut ctx)).ok()?;
         let (dev, ctx): (ID3D11Device, ID3D11DeviceContext) = (dev?, ctx?);
         let dup = output.cast::<IDXGIOutput1>().ok()?.DuplicateOutput(&dev).ok()?;
-        let mut info = DXGI_OUTDUPL_FRAME_INFO::default();
-        let mut res = None;
-        dup.AcquireNextFrame(1000, &mut info, &mut res).ok()?;
-        let tex: ID3D11Texture2D = res?.cast().ok()?;
+        // The first frame after DuplicateOutput is often blank: wait (briefly) for a presented one
+        let mut tex: Option<ID3D11Texture2D> = None;
+        for attempt in 0..6 {
+            let mut info = DXGI_OUTDUPL_FRAME_INFO::default();
+            let mut res = None;
+            if dup.AcquireNextFrame(if attempt == 0 { 500 } else { 100 }, &mut info, &mut res).is_err() {
+                break; // nothing new on a static desktop: let the caller fall back
+            }
+            if info.LastPresentTime != 0 {
+                tex = res.and_then(|r| r.cast().ok());
+                break;
+            }
+            let _ = dup.ReleaseFrame();
+        }
+        let tex = tex?;
         let mut desc = D3D11_TEXTURE2D_DESC::default();
         tex.GetDesc(&mut desc);
         desc.Usage = D3D11_USAGE_STAGING;
@@ -84,9 +100,45 @@ fn capture() -> Option<(Vec<u8>, u32, u32, usize)> {
     }
 }
 
+/// DXGI first; GDI when DXGI gives nothing or a blank image (static desktop, some drivers).
+fn grab() -> Option<(Vec<u8>, u32, u32, usize)> {
+    capture().filter(|(b, ..)| !is_black(b)).or_else(capture_gdi)
+}
+
+/// Primary display via GDI BitBlt, as top-down BGRA.
+fn capture_gdi() -> Option<(Vec<u8>, u32, u32, usize)> {
+    use windows::Win32::Graphics::Gdi::*;
+    use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
+    // SAFETY: plain GDI calls on handles created and released here.
+    unsafe {
+        let (w, h) = (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
+        if w <= 0 || h <= 0 {
+            return None;
+        }
+        let screen = GetDC(None);
+        let mem = CreateCompatibleDC(Some(screen));
+        let bmp = CreateCompatibleBitmap(screen, w, h);
+        let old = SelectObject(mem, bmp.into());
+        let ok = BitBlt(mem, 0, 0, w, h, Some(screen), 0, 0, SRCCOPY | CAPTUREBLT).is_ok();
+        let mut bi = BITMAPINFO::default();
+        bi.bmiHeader.biSize = std::mem::size_of::<BITMAPINFOHEADER>() as u32;
+        bi.bmiHeader.biWidth = w;
+        bi.bmiHeader.biHeight = -h; // top-down
+        bi.bmiHeader.biPlanes = 1;
+        bi.bmiHeader.biBitCount = 32;
+        let mut buf = vec![0u8; (w * h * 4) as usize];
+        let lines = if ok { GetDIBits(mem, bmp, 0, h as u32, Some(buf.as_mut_ptr().cast()), &mut bi, DIB_RGB_COLORS) } else { 0 };
+        SelectObject(mem, old);
+        let _ = DeleteObject(bmp.into());
+        let _ = DeleteDC(mem);
+        ReleaseDC(None, screen);
+        (lines == h).then_some((buf, w as u32, h as u32, w as usize * 4))
+    }
+}
+
 /// A ready-to-send thumbnail frame `[0x02][JPEG]`, or None (e.g. on the lock screen).
 pub fn frame() -> Option<Vec<u8>> {
-    let (bgra, w, h, pitch) = capture()?;
+    let (bgra, w, h, pitch) = grab()?;
     let (tw, th) = scaled_size(w, h);
     let mut f = vec![2u8];
     f.extend(jpeg(&downscale(&bgra, w, h, pitch, tw, th), tw, th)?);
@@ -148,6 +200,14 @@ mod tests {
         match frame() {
             Some(j) => assert_eq!(&j[..3], &[2, 0xFF, 0xD8]),
             None => eprintln!("no frame (locked or no display)"),
+        }
+    }
+
+    #[test]
+    fn capture_is_not_all_black_when_unlocked() {
+        // DXGI hands back an all-black first frame unless we wait for a presented one
+        if let Some((bgra, _, _, _)) = grab() {
+            assert!(!is_black(&bgra), "captured an all-black frame");
         }
     }
 }

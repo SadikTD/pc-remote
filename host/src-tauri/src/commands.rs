@@ -90,8 +90,7 @@ pub async fn get_state(app: State<'_, App>) -> Result<StateView, String> {
 
 #[tauri::command]
 pub fn new_qr(app: State<'_, App>) -> String {
-    let otp = app.store.lock().unwrap().new_otp();
-    let uri = qr_payload(&crate::win::sys::pc_name(), &rank_ips(crate::win::sys::adapters().0), PORT, &app.fp, &otp);
+    let uri = pair_url(&app);
     qrcode::QrCode::with_error_correction_level(uri, qrcode::EcLevel::M)
         .map(|q| {
             q.render::<qrcode::render::svg::Color>()
@@ -101,6 +100,12 @@ pub fn new_qr(app: State<'_, App>) -> String {
                 .build()
         })
         .unwrap_or_default()
+}
+
+/// A fresh one-time pairing link (what the QR code encodes).
+pub fn pair_url(app: &App) -> String {
+    let otp = app.store.lock().unwrap().new_otp();
+    qr_payload(&crate::win::sys::pc_name(), &rank_ips(crate::win::sys::adapters().0), PORT, &app.fp, &otp)
 }
 
 #[tauri::command]

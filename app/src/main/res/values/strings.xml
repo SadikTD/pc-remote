@@ -482,4 +482,6 @@
     <string name="pcr_pw_tap_again">Tap again to confirm</string>
     <string name="pcr_pad_retry">Can\'t reach your PC. Tap to retry</string>
     <string name="pcr_pad_no_gyro">No gyroscope: aiming layouts are hidden</string>
+    <string name="pcr_click_left">Left click</string>
+    <string name="pcr_click_right">Right click</string>
 </resources>

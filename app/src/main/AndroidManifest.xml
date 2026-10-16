@@ -79,6 +79,7 @@
         <activity
             android:name="com.pcremote.MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:resizeableActivity="true"
             android:windowSoftInputMode="adjustResize"
             android:theme="@android:style/Theme.Material.NoActionBar"
@@ -87,6 +88,13 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
                 <category android:name="android.intent.category.MULTIWINDOW_LAUNCHER" />
+            </intent-filter>
+            <!-- Scanning the PC's code with any camera app opens PC Remote and pairs -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="pcremote" android:host="pair" />
             </intent-filter>
         </activity>
         <!-- Home-screen shortcuts pinned with older versions still open the app -->

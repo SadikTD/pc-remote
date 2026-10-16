@@ -50,6 +50,19 @@ val IMPLEMENTED_MODES = setOf(Mode.SCREEN, Mode.REMOTE, Mode.MEDIA, Mode.SLIDES,
 class MainActivity : ComponentActivity() {
     private lateinit var computers: Computers
     private lateinit var home: HomeController
+    private lateinit var pairing: PairingModel
+
+    /** pcremote://pair… links (camera-app scans) start pairing straight away. */
+    private fun handlePairLink(intent: Intent?) {
+        val link = intent?.dataString?.takeIf { it.startsWith("pcremote://pair") } ?: return
+        intent.data = null
+        lifecycleScope.launch { pairing.onScanned(link) }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handlePairLink(intent)
+    }
 
     @Suppress("DEPRECATION")
     private val prefs by lazy { PreferenceManager.getDefaultSharedPreferences(this) }
@@ -66,12 +79,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         computers = Computers(applicationContext).also { it.bind() }
         home = HomeController(applicationContext, lifecycleScope, computers)
-        val pairing = PairingModel(PairingDeps(
+        pairing = PairingModel(PairingDeps(
             agentPair = { uri, device, pin -> agentPair(lifecycleScope, uri, device, pin) },
             moonlightPair = { host, pin -> computers.pair(host, pin) },
             save = { home.store.upsert(it); home.refreshStore() },
             device = Build.MODEL,
         ))
+        handlePairLink(intent)
         val legacyOrPaired = home.store.all().isNotEmpty() ||
             com.limelight.computers.ComputerDatabaseManager(this).run { try { getAllComputers().isNotEmpty() } finally { close() } }
         val start = Routes.start(if (legacyOrPaired) 1 else 0, prefs.getBoolean(PREF_ONBOARDED, false))

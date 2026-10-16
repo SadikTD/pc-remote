@@ -244,7 +244,8 @@ private fun ClickPad(modifier: Modifier, button: String, send: (Msg) -> Unit) {
                     }
                 }
             },
-    )
+        contentAlignment = Alignment.Center,
+    ) { Text(stringResource(if (button == "left") R.string.pcr_click_left else R.string.pcr_click_right), color = c.textDim, style = MaterialTheme.typography.labelLarge) }
 }
 
 @Composable

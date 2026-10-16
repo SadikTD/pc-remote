@@ -98,6 +98,11 @@ pub fn run_with(extra: impl FnOnce(tauri::Builder<tauri::Wry>) -> tauri::Builder
     extra(tauri::Builder::default())
         .plugin(tauri_plugin_single_instance::init(|app, argv, _| {
             // Explorer "Send to phone" starts a second instance with --send <path>.
+            if argv.iter().any(|a| a == "--pair-url") {
+                // `pc-remote-host --pair-url` writes a fresh pairing link (for pairing without a camera)
+                let _ = std::fs::write(data_dir().join("pair-url.txt"), commands::pair_url(&app.state::<App>()));
+                return;
+            }
             match send_arg(&argv) {
                 Some(path) => {
                     let _ = commands::offer_to(&app.state::<App>(), None, &path);
