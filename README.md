@@ -4,8 +4,12 @@ Control your Windows PC from your Android phone while watching its screen: track
 
 ## Get it
 
-- **Phone app:** download the latest APK from [Releases](https://github.com/SadikTD/pc-remote/releases/latest).
-- **PC app (Sunshine):** download `Sunshine-Windows-AMD64-installer.msi` from [SadikTD/Sunshine releases](https://github.com/SadikTD/Sunshine/releases/latest).
+From [Releases](https://github.com/SadikTD/pc-remote/releases/latest):
+
+- **Windows:** `PC-Remote-Host-1.0.0-setup.exe`. It installs everything (including Sunshine for screen sharing and the gamepad driver) and shows a QR code.
+- **Android:** `PC-Remote-1.0.0-arm64.apk` (most phones) or `-armv7.apk` (older phones).
+
+Open PC Remote on your phone and scan the code, with the app or any camera app. That's it.
 
 Setup steps: [docs/setup-sunshine.md](docs/setup-sunshine.md).
 
