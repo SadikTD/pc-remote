@@ -87,6 +87,8 @@ pub(crate) struct Ctx {
     pub sessions: Mutex<HashMap<u64, (DeviceId, mpsc::UnboundedSender<Out>)>>,
     pub events: broadcast::Sender<Event>,
     next_id: AtomicU64,
+    /// The rendezvous socket's outbox while it's connected.
+    relay: Mutex<Option<mpsc::Sender<tokio_tungstenite::tungstenite::Message>>>,
 }
 
 impl Ctx {
@@ -111,9 +113,13 @@ pub struct AgentHandle {
 }
 
 impl AgentHandle {
-    /// Revokes the device and closes only its sessions with `revoked`.
+    /// Revokes the device and closes only its sessions with `revoked`. The Worker hears it now,
+    /// or on its next connection.
     pub fn revoke(&self, device: &str) {
         let _ = self.ctx.store.lock().unwrap().revoke(device);
+        if let Some(tx) = self.ctx.relay.lock().unwrap().as_ref() {
+            let _ = tx.try_send(crate::remote::rendezvous::revoke_env(device));
+        }
         for (dev, tx) in self.ctx.sessions.lock().unwrap().values() {
             if dev == device {
                 let _ = tx.send(Out::Close("revoked"));
@@ -129,6 +135,15 @@ impl AgentHandle {
     pub fn send(&self, device: &str, m: ServerMsg) -> usize {
         let sessions = self.ctx.sessions.lock().unwrap();
         sessions.values().filter(|(d, tx)| d == device && tx.send(Out::Msg(m.clone())).is_ok()).count()
+    }
+
+    pub(crate) fn set_relay(&self, tx: Option<mpsc::Sender<tokio_tungstenite::tungstenite::Message>>) {
+        *self.ctx.relay.lock().unwrap() = tx;
+    }
+
+    /// Runs the agent protocol over a relayed connection, exactly as over a direct one.
+    pub(crate) async fn serve(&self, rx: impl session::Rx, tx: impl session::Tx) {
+        session::serve(rx, tx, self.ctx.clone()).await
     }
 
     /// Device ids with an open session (one entry per session).
@@ -166,6 +181,7 @@ impl Agent {
             sessions: Mutex::default(),
             events: broadcast::channel(32).0,
             next_id: AtomicU64::new(0),
+            relay: Mutex::default(),
         });
         let c = ctx.clone();
         tokio::spawn(async move {

@@ -14,6 +14,7 @@ pub mod pad;
 pub mod power;
 pub mod proto;
 pub mod prs;
+pub mod remote;
 pub mod store;
 pub mod sunshine;
 pub mod thumb;
@@ -165,6 +166,9 @@ pub fn run_with(extra: impl FnOnce(tauri::Builder<tauri::Wry>) -> tauri::Builder
                 "0.0.0.0:47999".parse().unwrap(),
                 Duration::from_secs(30),
             ))?;
+            if let Some(url) = remote::url() {
+                tauri::async_runtime::spawn(remote::rendezvous::run(agent.clone(), store.clone(), url.into()));
+            }
             let mut events = agent.events();
             let advert = mdns::Advert::start(store.lock().unwrap().pc_id(), &win::sys::pc_name());
             let mdns = Mutex::new(advert);

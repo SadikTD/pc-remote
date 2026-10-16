@@ -207,9 +207,13 @@ impl Session for HostSession {
                 }
                 None
             }
-            ClientMsg::StreamStart { w, h, fps, codecs, max_kbps, audio } => {
+            ClientMsg::StreamStart { w, h, fps, codecs, max_kbps, audio, cands } => {
                 self.stream = None; // a restart from this phone replaces its stream
-                let p = Params { w, h, fps: if fps == 0 { 60 } else { fps }, codecs, max_kbps: if max_kbps == 0 { 20000 } else { max_kbps }, audio };
+                let cands = cands.iter().filter_map(|c| c.parse().ok()).collect();
+                let st = self.net.lock().unwrap().clone();
+                let public = st.public.filter(|_| st.upnp).and_then(|ip| ip.parse().ok());
+                let (fps, max_kbps) = (if fps == 0 { 60 } else { fps }, if max_kbps == 0 { 20000 } else { max_kbps });
+                let p = Params { w, h, fps, codecs, max_kbps, audio, cands, public };
                 let out = self.out.clone();
                 let notify: crate::engine::session::Notify = Arc::new(move |m| {
                     out.send(m);
@@ -225,6 +229,12 @@ impl Session for HostSession {
             }
             ClientMsg::StreamStop => {
                 self.stream = None;
+                None
+            }
+            ClientMsg::StreamCand { c } => {
+                if let (Some(s), Ok(a)) = (&self.stream, c.parse()) {
+                    s.add_cand(a);
+                }
                 None
             }
             ClientMsg::ClipSub { on } => {

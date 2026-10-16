@@ -64,6 +64,12 @@ struct Data {
     devices: Vec<Device>,
     #[serde(default)]
     config: Config,
+    /// docs/remote-protocol.md `relayKey`, base64url; created once.
+    #[serde(default)]
+    relay_key: String,
+    /// The Worker accepted the key (later connections leave out `register`).
+    #[serde(default)]
+    relay_registered: bool,
 }
 
 pub struct Store {
@@ -80,6 +86,11 @@ fn uuid4() -> String {
     format!("{}-{}-{}-{}-{}", &h[..8], &h[8..12], &h[12..16], &h[16..20], &h[20..])
 }
 
+pub fn hmac(key: &[u8], msg: &str) -> [u8; 32] {
+    let tag = ring::hmac::sign(&ring::hmac::Key::new(ring::hmac::HMAC_SHA256, key), msg.as_bytes());
+    tag.as_ref().try_into().expect("32-byte tag")
+}
+
 fn token_hash(token: &str) -> String {
     hex(&sha256(token.as_bytes()))
 }
@@ -90,11 +101,14 @@ impl Store {
         let data = match std::fs::read(&path) {
             Ok(b) => serde_json::from_slice(&b).map_err(std::io::Error::other)?,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                Data { pc_id: uuid4(), devices: vec![], config: Config::default() }
+                Data { pc_id: uuid4(), devices: vec![], config: Config::default(), relay_key: String::new(), relay_registered: false }
             }
             Err(e) => return Err(e),
         };
-        let s = Store { path, data, otp: None };
+        let mut s = Store { path, data, otp: None };
+        if s.data.relay_key.is_empty() {
+            s.data.relay_key = b64url(&random::<32>());
+        }
         s.save()?;
         Ok(s)
     }
@@ -169,6 +183,29 @@ impl Store {
 
     pub fn device_name(&self, id: &str) -> Option<String> {
         self.data.devices.iter().find(|d| d.id == id).map(|d| d.name.clone())
+    }
+
+    pub fn relay_key(&self) -> Vec<u8> {
+        URL_SAFE_NO_PAD.decode(&self.data.relay_key).unwrap_or_default()
+    }
+
+    pub fn relay_registered(&self) -> bool {
+        self.data.relay_registered
+    }
+
+    pub fn set_relay_registered(&mut self) -> std::io::Result<()> {
+        self.data.relay_registered = true;
+        self.save()
+    }
+
+    /// `ticket(dev) = HMAC-SHA256(relayKey, "ticket:" + pcId + ":" + deviceId)`.
+    pub fn ticket(&self, dev: &str) -> [u8; 32] {
+        hmac(&self.relay_key(), &format!("ticket:{}:{dev}", self.data.pc_id))
+    }
+
+    /// Ids of removed devices (the Worker is told again on every connection).
+    pub fn revoked(&self) -> Vec<DeviceId> {
+        self.data.devices.iter().filter(|d| d.revoked).map(|d| d.id.clone()).collect()
     }
 
     pub fn config(&self) -> &Config {
@@ -256,6 +293,27 @@ mod tests {
         let bytes = std::fs::read(d.join("store.json")).unwrap();
         let text = String::from_utf8(bytes).unwrap();
         assert!(!text.contains(&token));
+    }
+
+    #[test]
+    fn relay_key_persists_and_ticket_matches_hmac() {
+        let d = tmp("relay");
+        let (key, pc) = {
+            let mut s = Store::open(&d).unwrap();
+            assert!(!s.relay_registered());
+            s.set_relay_registered().unwrap();
+            (s.relay_key(), s.pc_id().to_string())
+        };
+        let s = Store::open(&d).unwrap();
+        assert_eq!(key.len(), 32);
+        assert_eq!(s.relay_key(), key, "created once");
+        assert!(s.relay_registered());
+        assert_eq!(s.ticket("dev1"), hmac(&key, &format!("ticket:{pc}:dev1")));
+        // RFC 4231 test case 2
+        assert_eq!(
+            hex(&hmac(b"Jefe", "what do ya want for nothing?")),
+            "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
+        );
     }
 
     #[test]

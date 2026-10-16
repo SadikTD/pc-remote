@@ -41,9 +41,15 @@ type Sink = mpsc::Receiver<ClientMsg>;
 
 /// A host-side control loop on 127.0.0.1 with no media threads.
 fn host(timeout: Duration) -> (Arc<Shared>, SocketAddr, Sink, std::thread::JoinHandle<()>) {
+    host_with(timeout, |_| {})
+}
+
+fn host_with(timeout: Duration, setup: impl FnOnce(&mut Shared)) -> (Arc<Shared>, SocketAddr, Sink, std::thread::JoinHandle<()>) {
     let sock = UdpSocket::bind("127.0.0.1:0").unwrap();
     let addr = sock.local_addr().unwrap();
-    let sh = Arc::new(Shared::new(sock, &KEY, 42, Target { kbps: 10000, fec: 15, notch: 0 }));
+    let mut sh = Shared::new(sock, &KEY, 42, Target { kbps: 10000, fec: 15, notch: 0 });
+    setup(&mut sh);
+    let sh = Arc::new(sh);
     let (tx, rx) = mpsc::channel();
     let s = sh.clone();
     let t = std::thread::spawn(move || {
@@ -180,7 +186,7 @@ struct Partial {
 /// drops 10% of media packets, rebuilds frames through FEC and asks for keyframes like the phone.
 #[test]
 fn loopback_streams_real_frames() {
-    let p = Params { w: 1280, h: 720, fps: 60, codecs: vec!["h264".into()], max_kbps: 10000, audio: true };
+    let p = Params { w: 1280, h: 720, fps: 60, codecs: vec!["h264".into()], max_kbps: 10000, audio: true, cands: vec![], public: None };
     let notify: Notify = Arc::new(|_| {});
     let (ready, session) = match StreamSession::start(p, IpAddr::from([127, 0, 0, 1]), notify, Box::new(|_| {})) {
         Ok(r) => r,
@@ -296,4 +302,68 @@ fn loopback_streams_real_frames() {
     assert!(done.len() as f64 / secs > 40.0, "frame rate through FEC: {:.1} fps", done.len() as f64 / secs);
     assert!(p95 < 50_000, "capture→receive p95 {p95} µs");
     drop(session);
+}
+
+impl Phone {
+    fn addr(&self) -> SocketAddr {
+        self.sock.local_addr().unwrap()
+    }
+
+    /// PROBEs received until 300 ms of silence.
+    fn count_probes(&self) -> usize {
+        std::iter::from_fn(|| self.recv()).filter(|(h, p)| h.typ == Type::Probe && p[8..] == [0; 8]).count()
+    }
+}
+
+fn short_punch(sh: &mut Shared) {
+    sh.punch_every = Duration::from_millis(50);
+    sh.punch_for = Duration::from_millis(400);
+}
+
+#[test]
+fn punches_candidates_until_the_first_probe() {
+    let (b, c) = (Phone::new(&KEY, 42), Phone::new(&KEY, 42));
+    let (sh, host_addr, _, t) = host_with(TIMEOUT, short_punch);
+    sh.punch([b.addr(), b.addr()]);
+    let n = b.count_probes();
+    assert!((5..=10).contains(&n), "~400/50 PROBEs in the window, got {n}");
+    assert_eq!(b.count_probes(), 0, "stops after the window");
+
+    // stream.cand: a new candidate restarts the window
+    sh.punch([c.addr()]);
+    std::thread::sleep(Duration::from_millis(120));
+    let mut a = Phone::new(&KEY, 42);
+    a.probe(host_addr, 5); // the phone got through from another address
+    assert!(a.recv().is_some());
+    assert_eq!(sh.peer(), Some(a.addr()));
+    let n = c.count_probes();
+    assert!((1..=4).contains(&n), "punching stops at the first authenticated PROBE, got {n}");
+    b.count_probes(); // b was punched again too
+    assert_eq!(c.count_probes() + b.count_probes(), 0);
+    stop(&sh, t);
+}
+
+#[test]
+fn punching_keeps_the_stream_alive_past_the_timeout() {
+    let b = Phone::new(&KEY, 42);
+    let (sh, _, _, t) = host_with(Duration::from_millis(150), |sh| {
+        short_punch(sh);
+        sh.punch_for = Duration::from_millis(600);
+    });
+    sh.punch([b.addr()]);
+    std::thread::sleep(Duration::from_millis(400));
+    assert!(!t.is_finished(), "still punching");
+    std::thread::sleep(Duration::from_millis(400));
+    assert!(t.is_finished(), "gave up after the window");
+    assert!(sh.stopped());
+}
+
+#[test]
+fn ready_candidates_in_order() {
+    let lan = ["192.168.0.126".to_string(), "10.0.0.2".to_string()];
+    let pub_ip = Some(IpAddr::from([203, 0, 113, 7]));
+    let refl = Some("203.0.113.7:47998".parse().unwrap());
+    assert_eq!(host_cands(&lan, STREAM_PORT, pub_ip, refl), ["192.168.0.126:47998", "10.0.0.2:47998", "203.0.113.7:47998"]);
+    let refl = Some("198.51.100.4:6100".parse().unwrap());
+    assert_eq!(host_cands(&lan[..1], 50000, pub_ip, refl), ["192.168.0.126:50000", "198.51.100.4:6100"], "UPnP maps only 47998");
 }

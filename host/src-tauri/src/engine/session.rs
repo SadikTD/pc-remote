@@ -19,6 +19,10 @@ use windows::Win32::Graphics::Direct3D11::ID3D11Texture2D;
 
 pub const TIMEOUT: Duration = Duration::from_secs(5);
 const IDR_EVERY: Duration = Duration::from_millis(250);
+/// Hole punching (docs/remote-protocol.md): PROBE every phone candidate this often, for this long.
+const PUNCH_EVERY: Duration = Duration::from_millis(100);
+const PUNCH_FOR: Duration = Duration::from_secs(10);
+const MAX_CANDS: usize = 16;
 
 #[derive(Debug, Clone)]
 pub struct Params {
@@ -28,6 +32,10 @@ pub struct Params {
     pub codecs: Vec<String>,
     pub max_kbps: u32,
     pub audio: bool,
+    /// The phone's PRS addresses to punch towards.
+    pub cands: Vec<SocketAddr>,
+    /// The router's public IP when UPnP mapped the stream port.
+    pub public: Option<IpAddr>,
 }
 
 /// The UDP port streams use when it's free (mapped on the router by `net`).
@@ -46,6 +54,10 @@ pub struct Shared {
     stop: AtomicBool,
     idr: AtomicBool,
     target: Mutex<Target>,
+    cands: Mutex<Vec<SocketAddr>>,
+    punch_until: Mutex<Option<Instant>>,
+    punch_every: Duration,
+    punch_for: Duration,
 }
 
 fn hdr(typ: Type, frame_id: u32) -> Header {
@@ -62,7 +74,29 @@ impl Shared {
             stop: AtomicBool::new(false),
             idr: AtomicBool::new(false),
             target: Mutex::new(target),
+            cands: Mutex::default(),
+            punch_until: Mutex::default(),
+            punch_every: PUNCH_EVERY,
+            punch_for: PUNCH_FOR,
         }
+    }
+
+    /// Adds phone candidates and (re)starts the punching window.
+    pub fn punch(&self, add: impl IntoIterator<Item = SocketAddr>) {
+        let mut c = self.cands.lock().unwrap();
+        for a in add {
+            if c.len() < MAX_CANDS && !c.contains(&a) {
+                c.push(a);
+            }
+        }
+        if !c.is_empty() {
+            *self.punch_until.lock().unwrap() = Some(Instant::now() + self.punch_for);
+        }
+    }
+
+    /// Still looking for the phone: no authenticated PROBE yet and inside the window.
+    fn punching(&self) -> bool {
+        self.peer().is_none() && self.punch_until.lock().unwrap().is_some_and(|t| Instant::now() < t)
     }
 
     pub fn peer(&self) -> Option<SocketAddr> {
@@ -74,8 +108,11 @@ impl Shared {
     }
 
     /// Seals and sends to the phone's learned address; false before the first PROBE.
-    pub fn send(&self, mut h: Header, plain: &[u8]) -> bool {
-        let Some(to) = self.peer() else { return false };
+    pub fn send(&self, h: Header, plain: &[u8]) -> bool {
+        self.peer().is_some_and(|to| self.send_to(to, h, plain))
+    }
+
+    fn send_to(&self, to: SocketAddr, mut h: Header, plain: &[u8]) -> bool {
         h.seq = self.seq.fetch_add(1, Ordering::Relaxed);
         self.sock.send_to(&self.crypt.seal(Dir::HostToPhone, &h, plain), to).is_ok()
     }
@@ -100,17 +137,43 @@ fn parse_report(p: &[u8]) -> Option<(u16, u16)> {
     (p.len() >= 16).then(|| (u16::from_be_bytes([p[4], p[5]]), u16::from_be_bytes([p[10], p[11]])))
 }
 
-/// The receive loop: runs until BYE, `timeout` of silence, or `stop`.
+fn probe(echo: u64) -> [u8; 16] {
+    let mut p = [0u8; 16];
+    p[..8].copy_from_slice(&now_us().to_be_bytes());
+    p[8..].copy_from_slice(&echo.to_be_bytes());
+    p
+}
+
+/// The receive loop: runs until BYE, `timeout` of silence (punching extends it), or `stop`.
 pub fn control(sh: &Shared, input: &mut dyn FnMut(ClientMsg), br: &mut Bitrate, timeout: Duration) {
-    let _ = sh.sock.set_read_timeout(Some(Duration::from_millis(100)));
     let start = Instant::now();
+    let (mut wait, mut next_punch) = (Duration::ZERO, start);
     let (mut last_rx, mut last_idr, mut probe_seq) = (Instant::now(), None::<Instant>, None::<u32>);
     let mut dedup = Dedup::default();
     let (mut input_pkts, mut input_log) = (0u64, Instant::now());
     let mut buf = [0u8; 2048];
-    while !sh.stopped() && last_rx.elapsed() < timeout {
+    loop {
+        let punching = sh.punching();
+        if sh.stopped() || (last_rx.elapsed() >= timeout && !punching) {
+            break;
+        }
+        let now = Instant::now();
+        if punching && now >= next_punch {
+            for &to in sh.cands.lock().unwrap().iter() {
+                sh.send_to(to, hdr(Type::Probe, 0), &probe(0));
+            }
+            next_punch = now + sh.punch_every;
+        }
+        let w = if punching { next_punch.saturating_duration_since(now).max(Duration::from_millis(1)) } else { Duration::from_millis(100) };
+        if w != wait {
+            wait = w;
+            let _ = sh.sock.set_read_timeout(Some(w));
+        }
         // Errors include Windows' WSAECONNRESET after an ICMP "port unreachable": keep going.
         let Ok((n, from)) = sh.sock.recv_from(&mut buf) else { continue };
+        if crate::remote::stun::is_stun(&buf[..n]) {
+            continue; // a late STUN answer
+        }
         let Some((h, p)) = sh.crypt.open(Dir::PhoneToHost, &buf[..n]) else { continue };
         last_rx = Instant::now();
         match h.typ {
@@ -120,10 +183,7 @@ pub fn control(sh: &Shared, input: &mut dyn FnMut(ClientMsg), br: &mut Bitrate, 
                 if first {
                     sh.idr.store(true, Ordering::Relaxed);
                 }
-                let mut reply = [0u8; 16];
-                reply[..8].copy_from_slice(&now_us().to_be_bytes());
-                reply[8..].copy_from_slice(&p[..8]);
-                sh.send(hdr(Type::Probe, 0), &reply);
+                sh.send(hdr(Type::Probe, 0), &probe(u64::from_be_bytes(p[..8].try_into().unwrap())));
             }
             Type::Input => {
                 let evs = dedup.take(&p);
@@ -158,6 +218,7 @@ struct ReadyInfo {
     port: u16,
     session: u32,
     key: String,
+    cands: Vec<String>,
 }
 
 impl ReadyInfo {
@@ -170,6 +231,7 @@ impl ReadyInfo {
             port: self.port,
             session: self.session,
             key: self.key.clone(),
+            cands: self.cands.clone(),
         }
     }
 }
@@ -310,6 +372,17 @@ fn poll(cap: &mut Capture<Dxgi>, until: Instant, sh: &Shared) -> Option<capture:
     }
 }
 
+/// `stream.ready` candidates: LAN addresses, the UPnP-mapped public one, the STUN-reflexive one.
+fn host_cands(lan: &[String], port: u16, public: Option<IpAddr>, reflexive: Option<SocketAddr>) -> Vec<String> {
+    let mut v: Vec<String> = lan.iter().map(|ip| format!("{ip}:{port}")).collect();
+    // UPnP maps only the fixed port
+    v.extend(public.filter(|_| port == STREAM_PORT).map(|ip| SocketAddr::new(ip, port).to_string()));
+    v.extend(reflexive.map(|a| a.to_string()));
+    let mut seen = std::collections::HashSet::new();
+    v.retain(|c| seen.insert(c.clone()));
+    v
+}
+
 static ACTIVE: Mutex<Weak<Shared>> = Mutex::new(Weak::new());
 
 pub struct StreamSession {
@@ -336,28 +409,38 @@ impl StreamSession {
         let session = u32::from_be_bytes(crate::store::random());
         let sh = Arc::new(Shared::new(sock, &key, session, Bitrate::new(p.max_kbps, 0).target()));
 
-        // The video thread opens its pipeline, then reports the codec and size it got.
+        // The video thread opens its pipeline, reports the codec and size it got, then waits for
+        // the full `stream.ready` (it repeats it on resolution changes).
         let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel::<ReadyInfo>(1);
         let (vsh, vp, vn) = (sh.clone(), p.clone(), notify.clone());
         let video = std::thread::spawn(move || {
             let _com = Com::init();
             let kbps = vsh.target.lock().unwrap().kbps;
             match Video::open(&vp, kbps) {
                 Ok(v) => {
-                    let ready = ReadyInfo { codec: v.enc.codec(), fps: v.fps, port, session, key: STANDARD.encode(key) };
-                    let _ = tx.send(Ok((ready.clone(), v.base)));
-                    v.run(&vsh, &ready, &vn);
+                    let _ = tx.send(Ok((v.enc.codec(), v.fps, v.base)));
+                    if let Ok(ready) = ready_rx.recv() {
+                        v.run(&vsh, &ready, &vn);
+                    }
                 }
                 Err(e) => {
                     let _ = tx.send(Err(e));
                 }
             }
         });
-        let (ready, base) = match rx.recv() {
+        // While the encoder opens: this socket's public address, for the phone to punch towards.
+        let reflexive = (!bind.is_loopback()).then(|| crate::remote::stun::public_addr(&sh.sock)).flatten();
+        let (codec, fps, base) = match rx.recv() {
             Ok(Ok(r)) => r,
             Ok(Err(e)) => return Err(e),
             Err(_) => return Err(err("capture_failed", "video pipeline crashed")),
         };
+        let lan = crate::commands::rank_ips(crate::win::sys::adapters().0);
+        let cands = host_cands(&lan, port, p.public, reflexive);
+        let ready = ReadyInfo { codec, fps, port, session, key: STANDARD.encode(key), cands };
+        let _ = ready_tx.send(ready.clone());
+        sh.punch(p.cands.iter().copied());
         // step-down notches follow the size actually streamed
         let mut br = Bitrate::new(p.max_kbps, notches_below(base.1).len() as u8);
         let mut threads = vec![video];
@@ -380,6 +463,11 @@ impl StreamSession {
         }
         *active = Arc::downgrade(&sh);
         Ok((ready.msg(base), StreamSession { sh, threads }))
+    }
+
+    /// A phone candidate from `stream.cand`: punch towards it too, restarting the window.
+    pub fn add_cand(&self, a: SocketAddr) {
+        self.sh.punch([a]);
     }
 
     pub fn alive(&self) -> bool {
