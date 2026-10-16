@@ -401,7 +401,7 @@ mod tests {
 
     /// (device, luid, a converter + NV12 source) or None when this PC has no hardware encoder.
     fn rig(codec: Codec) -> Option<(ID3D11Device, i64, Convert, ID3D11Texture2D)> {
-        let (dev, ctx, _, luid) = capture::device()?;
+        let (dev, ctx, _, luid) = capture::device("")?;
         if !codecs_available(luid).contains(&codec) {
             eprintln!("no hardware {codec:?} encoder on this PC");
             return None;

@@ -1,6 +1,6 @@
 [package]
 name = "pc-remote-host"
-version = "1.0.0"
+version = "2.0.0"
 description = "PC Remote Host"
 edition = "2021"
 license = "GPL-3.0"

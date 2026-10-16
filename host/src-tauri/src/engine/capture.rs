@@ -83,16 +83,48 @@ pub struct GpuFrame {
     pub shape: Option<Shape>,
 }
 
-/// The adapter that drives the primary display, and a D3D11 device on it for capture,
-/// conversion and encoding.
-pub fn device() -> Option<(ID3D11Device, ID3D11DeviceContext, IDXGIOutput1, i64)> {
-    // SAFETY: COM/D3D calls with valid out-params.
+/// A display the user can pick in Settings: `id` is the Windows device name (`\\.\DISPLAY2`).
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct Display {
+    pub id: String,
+    pub name: String,
+    pub primary: bool,
+}
+
+fn outputs() -> Vec<(IDXGIAdapter1, IDXGIOutput)> {
+    // SAFETY: COM enumeration with valid out-params.
     unsafe {
-        let factory: IDXGIFactory1 = CreateDXGIFactory1().ok()?;
-        let (adapter, output) = (0..)
+        let Ok(factory) = CreateDXGIFactory1::<IDXGIFactory1>() else { return vec![] };
+        (0..)
             .map_while(|i| factory.EnumAdapters1(i).ok())
             .flat_map(|a| (0..).map_while(move |j| a.EnumOutputs(j).ok().map(|o| (a.clone(), o))))
-            .find(|(_, o)| o.GetDesc().is_ok_and(|d| d.DesktopCoordinates.left == 0 && d.DesktopCoordinates.top == 0))?;
+            .collect()
+    }
+}
+
+fn describe(o: &IDXGIOutput) -> Option<Display> {
+    // SAFETY: GetDesc fills a plain struct.
+    let d = unsafe { o.GetDesc().ok()? };
+    let n = d.DeviceName.iter().position(|c| *c == 0).unwrap_or(d.DeviceName.len());
+    let id = String::from_utf16_lossy(&d.DeviceName[..n]);
+    let r = d.DesktopCoordinates;
+    let label = id.trim_start_matches(r"\\.\").replace("DISPLAY", "Display ");
+    Some(Display { name: format!("{label} ({}×{})", r.right - r.left, r.bottom - r.top), primary: r.left == 0 && r.top == 0, id })
+}
+
+/// Every display attached to the desktop.
+pub fn displays() -> Vec<Display> {
+    outputs().iter().filter_map(|(_, o)| describe(o)).collect()
+}
+
+/// The adapter that drives `display` (a device name; empty or unknown = the primary display),
+/// and a D3D11 device on it for capture, conversion and encoding.
+pub fn device(display: &str) -> Option<(ID3D11Device, ID3D11DeviceContext, IDXGIOutput1, i64)> {
+    let all = outputs();
+    let pick = |want: &dyn Fn(&Display) -> bool| all.iter().find(|(_, o)| describe(o).is_some_and(|d| want(&d))).cloned();
+    let (adapter, output) = pick(&|d| !display.is_empty() && d.id == display).or_else(|| pick(&|d| d.primary))?;
+    // SAFETY: COM/D3D calls with valid out-params.
+    unsafe {
         let (mut dev, mut ctx) = (None, None);
         D3D11CreateDevice(
             &adapter,

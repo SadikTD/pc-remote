@@ -97,10 +97,7 @@ async fn recv_bin(ws: &mut Ws) -> Vec<u8> {
 }
 
 #[derive(Default)]
-struct Fake {
-    pins: StdMutex<Vec<(String, String)>>,
-    pin_ok: bool,
-}
+struct Fake;
 
 /// Echoes what a real host session would do, minimally: power, a pushed binary frame, binary echo.
 struct FakeSession {
@@ -128,13 +125,8 @@ impl Session for FakeSession {
 impl Handlers for Fake {
     fn pc_info(&self) -> BoxFut<PcInfo> {
         Box::pin(async {
-            PcInfo { id: "pc".into(), name: "TEST-PC".into(), user: "u".into(), macs: vec![], os: "Windows".into(), sunshine: true }
+            PcInfo { id: "pc".into(), name: "TEST-PC".into(), user: "u".into(), macs: vec![], os: "Windows".into() }
         })
-    }
-    fn submit_pin(&self, pin: String, name: String) -> BoxFut<bool> {
-        self.pins.lock().unwrap().push((pin, name));
-        let ok = self.pin_ok;
-        Box::pin(async move { ok })
     }
     fn caps(&self) -> Vec<String> {
         vec!["input".into(), "power".into(), "thumb".into()]
@@ -151,13 +143,13 @@ struct Rig {
     fp: String,
 }
 
-async fn rig(name: &str, idle: Duration, pin_ok: bool) -> Rig {
+async fn rig(name: &str, idle: Duration) -> Rig {
     let dir = std::env::temp_dir().join(format!("pcr-agent-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let id = Identity::load_or_create(&dir).unwrap();
     let fp = id.fingerprint_hex.clone();
     let store = Arc::new(StdMutex::new(Store::open(&dir).unwrap()));
-    let fake = Arc::new(Fake { pin_ok, ..Default::default() });
+    let fake = Arc::new(Fake);
     let handle = Agent::start(&id, store.clone(), fake.clone(), "127.0.0.1:0".parse().unwrap(), idle).await.unwrap();
     Rig { handle, store, fake, fp }
 }
@@ -170,7 +162,7 @@ async fn hello(r: &Rig, token: &str) -> Ws {
 
 #[tokio::test]
 async fn hello_with_valid_token_gets_welcome() {
-    let r = rig("hello", Duration::from_secs(30), true).await;
+    let r = rig("hello", Duration::from_secs(30)).await;
     let (_, token) = r.store.lock().unwrap().add_device("Pixel 8").unwrap();
     let mut ws = hello(&r, &token).await;
     let w = recv(&mut ws).await.unwrap();
@@ -193,7 +185,7 @@ async fn hello_with_valid_token_gets_welcome() {
 
 #[tokio::test]
 async fn hello_with_unknown_token_is_unauthorized() {
-    let r = rig("unknown", Duration::from_secs(30), true).await;
+    let r = rig("unknown", Duration::from_secs(30)).await;
     let mut ws = hello(&r, "nope").await;
     assert_eq!(recv(&mut ws).await.unwrap()["code"], "unauthorized");
     assert_eq!(recv(&mut ws).await, None);
@@ -201,7 +193,7 @@ async fn hello_with_unknown_token_is_unauthorized() {
 
 #[tokio::test]
 async fn first_message_not_auth_closes_unauthorized() {
-    let r = rig("first", Duration::from_secs(30), true).await;
+    let r = rig("first", Duration::from_secs(30)).await;
     let mut ws = connect(r.handle.addr, &r.fp).await;
     send(&mut ws, json!({"t":"ping"})).await;
     assert_eq!(recv(&mut ws).await.unwrap()["code"], "unauthorized");
@@ -210,7 +202,7 @@ async fn first_message_not_auth_closes_unauthorized() {
 
 #[tokio::test]
 async fn pair_with_otp_returns_token_and_otp_is_consumed() {
-    let r = rig("pair", Duration::from_secs(30), true).await;
+    let r = rig("pair", Duration::from_secs(30)).await;
     let mut events = r.handle.events();
     let otp = r.store.lock().unwrap().new_otp();
     let mut ws = connect(r.handle.addr, &r.fp).await;
@@ -225,7 +217,6 @@ async fn pair_with_otp_returns_token_and_otp_is_consumed() {
     // authenticated: ping works on the same socket
     send(&mut ws, json!({"t":"ping"})).await;
     assert_eq!(recv(&mut ws).await.unwrap()["t"], "pong");
-    assert_eq!(*r.fake.pins.lock().unwrap(), vec![("4821".to_string(), "Pixel 8".to_string())]);
 
     let mut again = connect(r.handle.addr, &r.fp).await;
     send(&mut again, json!({"t":"pair","otp":otp,"device":"Thief","pin":"0000"})).await;
@@ -234,18 +225,8 @@ async fn pair_with_otp_returns_token_and_otp_is_consumed() {
 }
 
 #[tokio::test]
-async fn pair_reports_pin_timeout() {
-    let r = rig("pinfail", Duration::from_secs(30), false).await;
-    let otp = r.store.lock().unwrap().new_otp();
-    let mut ws = connect(r.handle.addr, &r.fp).await;
-    send(&mut ws, json!({"t":"pair","otp":otp,"device":"Pixel 8","pin":"4821"})).await;
-    assert_eq!(recv(&mut ws).await.unwrap()["t"], "paired");
-    assert_eq!(recv(&mut ws).await.unwrap()["code"], "pin_timeout");
-}
-
-#[tokio::test]
 async fn revoke_closes_only_that_device() {
-    let r = rig("revoke", Duration::from_secs(30), true).await;
+    let r = rig("revoke", Duration::from_secs(30)).await;
     let (a_id, a_tok) = r.store.lock().unwrap().add_device("A").unwrap();
     let (_, b_tok) = r.store.lock().unwrap().add_device("B").unwrap();
     let mut a = hello(&r, &a_tok).await;
@@ -267,7 +248,7 @@ async fn revoke_closes_only_that_device() {
 
 #[tokio::test]
 async fn idle_timeout_closes() {
-    let r = rig("idle", Duration::from_millis(300), true).await;
+    let r = rig("idle", Duration::from_millis(300)).await;
     let (_, tok) = r.store.lock().unwrap().add_device("A").unwrap();
     let mut ws = hello(&r, &tok).await;
     assert_eq!(recv(&mut ws).await.unwrap()["t"], "welcome");
@@ -278,7 +259,7 @@ async fn idle_timeout_closes() {
 
 #[tokio::test]
 async fn wrong_path_is_rejected() {
-    let r = rig("path", Duration::from_secs(30), true).await;
+    let r = rig("path", Duration::from_secs(30)).await;
     let cfg = rustls::ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
         .with_safe_default_protocol_versions()
         .unwrap()
@@ -295,7 +276,7 @@ async fn wrong_path_is_rejected() {
 
 #[tokio::test]
 async fn pair_caps_device_name() {
-    let r = rig("longname", Duration::from_secs(30), true).await;
+    let r = rig("longname", Duration::from_secs(30)).await;
     let otp = r.store.lock().unwrap().new_otp();
     let mut ws = connect(r.handle.addr, &r.fp).await;
     send(&mut ws, json!({"t":"pair","otp":otp,"device":"é".repeat(500),"pin":"1"})).await;
@@ -306,7 +287,7 @@ async fn pair_caps_device_name() {
 
 #[tokio::test]
 async fn oversized_frame_before_auth_closes() {
-    let r = rig("big", Duration::from_secs(30), true).await;
+    let r = rig("big", Duration::from_secs(30)).await;
     let mut ws = connect(r.handle.addr, &r.fp).await;
     let _ = ws.send(Message::text("x".repeat(MAX_FRAME + 1))).await;
     assert_eq!(recv(&mut ws).await, None);
@@ -314,7 +295,7 @@ async fn oversized_frame_before_auth_closes() {
 
 #[tokio::test]
 async fn session_pushes_binary_and_receives_binary() {
-    let r = rig("bin", Duration::from_secs(30), true).await;
+    let r = rig("bin", Duration::from_secs(30)).await;
     let (_, tok) = r.store.lock().unwrap().add_device("A").unwrap();
     let mut ws = hello(&r, &tok).await;
     let w = recv(&mut ws).await.unwrap();
@@ -327,7 +308,7 @@ async fn session_pushes_binary_and_receives_binary() {
 
 #[tokio::test]
 async fn handle_sends_to_one_device() {
-    let r = rig("sendto", Duration::from_secs(30), true).await;
+    let r = rig("sendto", Duration::from_secs(30)).await;
     let (a_id, a_tok) = r.store.lock().unwrap().add_device("A").unwrap();
     let (_, b_tok) = r.store.lock().unwrap().add_device("B").unwrap();
     let mut a = hello(&r, &a_tok).await;
@@ -390,7 +371,7 @@ mod relay {
 
     #[tokio::test]
     async fn relayed_phone_runs_the_agent_protocol() {
-        let r = rig("relay", Duration::from_secs(30), true).await;
+        let r = rig("relay", Duration::from_secs(30)).await;
         let (dev, token) = r.store.lock().unwrap().add_device("Pixel 8").unwrap();
         let (gone, _) = r.store.lock().unwrap().add_device("old phone").unwrap();
         r.store.lock().unwrap().revoke(&gone).unwrap();
@@ -448,7 +429,7 @@ mod relay {
 
     #[tokio::test]
     async fn worker_close_ends_the_session_and_reconnects() {
-        let r = rig("relay-close", Duration::from_secs(30), true).await;
+        let r = rig("relay-close", Duration::from_secs(30)).await;
         let (dev, token) = r.store.lock().unwrap().add_device("Pixel 8").unwrap();
         let l = TcpListener::bind("127.0.0.1:0").await.unwrap();
         tokio::spawn(crate::remote::rendezvous::run(r.handle.clone(), r.store.clone(), format!("ws://{}", l.local_addr().unwrap())));
@@ -483,7 +464,7 @@ mod relay {
     #[tokio::test]
     #[ignore = "needs the internet and the deployed Worker"]
     async fn live_worker_relay() {
-        let r = rig("relay-live", Duration::from_secs(30), true).await;
+        let r = rig("relay-live", Duration::from_secs(30)).await;
         let (dev, token) = r.store.lock().unwrap().add_device("Pixel 8").unwrap();
         let base = crate::remote::url().unwrap().to_string();
         tokio::spawn(crate::remote::rendezvous::run(r.handle.clone(), r.store.clone(), base.clone()));

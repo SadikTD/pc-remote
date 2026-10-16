@@ -28,9 +28,9 @@ The first frame from the client must be either `pair` or `hello`. Anything else 
 → {"t":"pair","otp":"<t from QR>","device":"Pixel 8","pin":"4821"}
 ← {"t":"paired","token":"<43 chars base64url, 256-bit>","pc":{...PcInfo}}
 ```
-- `pin`: a 4-digit Moonlight PIN the phone generated. Right after sending `pair`, the phone starts Moonlight pairing with this PIN. The host submits it to Sunshine (`POST https://localhost:47990/api/pin {"pin","name"}`), retrying every 500 ms for up to 30 s while Sunshine has no pending pair request.
-- `paired` is sent once the device token is stored, and doesn't wait for Moonlight pairing to finish.
-- Errors: `bad_otp` (wrong or expired), `pin_timeout` (Sunshine never accepted the PIN).
+- `pin`: optional and ignored (v1 used it to pair Moonlight with Sunshine).
+- `paired` is sent once the device token is stored, followed by `remote` (docs/remote-protocol.md) when a rendezvous Worker is configured.
+- Errors: `bad_otp` (wrong or expired).
 - After `paired`, the session is authenticated, exactly as if `hello` had succeeded.
 
 ### Hello (every later connection)
@@ -42,9 +42,8 @@ The first frame from the client must be either `pair` or `hello`. Anything else 
 
 ### PcInfo
 ```json
-{"id":"<stable uuid>","name":"DESKTOP-ABC","user":"Sadik","macs":["AA:BB:CC:DD:EE:FF"],"os":"Windows 11 Pro 26300","sunshine":true}
+{"id":"<stable uuid>","name":"DESKTOP-ABC","user":"Sadik","macs":["AA:BB:CC:DD:EE:FF"],"os":"Windows 11 Pro 26300"}
 ```
-`sunshine: false` means Sunshine isn't running. The app then disables Screen mode and shows "Starting screen sharing…".
 
 ## Input (cap `input`)
 
@@ -123,7 +122,7 @@ The host releases every key and button that is still held when a connection clos
 → {"t":"net"}
 ← {"t":"net","lan":["192.168.0.126"],"public":"203.0.113.7","anywhere":true,"upnp":true}
 ```
-- `status` is pushed whenever Sunshine streaming starts or stops.
+- `status` is reserved (v1 pushed it while Sunshine streamed); v2 hosts don't send it.
 - `public` is null when unknown.
 
 ## Streaming (cap `stream`)
@@ -140,4 +139,4 @@ The host advertises mDNS `_pcremote._udp.local`, port 47999, with TXT `id=<PcInf
 ```json
 {"t":"error","code":"<code>","msg":"<human readable>","of":"<request t, optional>"}
 ```
-Codes: `unauthorized`, `revoked`, `bad_otp`, `pin_timeout`, `bad_request`, `unsupported`, `internal`.
+Codes: `unauthorized`, `revoked`, `bad_otp`, `bad_request`, `unsupported`, `internal`.

@@ -16,7 +16,6 @@ pub mod proto;
 pub mod prs;
 pub mod remote;
 pub mod store;
-pub mod sunshine;
 pub mod thumb;
 pub mod tls;
 pub mod win;
@@ -26,7 +25,6 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use store::Store;
-use sunshine::Sunshine;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter as _, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
@@ -35,7 +33,6 @@ use tauri::{AppHandle, Emitter as _, Manager, RunEvent, WebviewUrl, WebviewWindo
 pub struct App {
     pub store: Arc<Mutex<Store>>,
     pub agent: AgentHandle,
-    pub sunshine: Arc<Sunshine>,
     pub fp: String,
     pub outgoing: files::Outgoing,
     pub net: Arc<Mutex<net::NetStatus>>,
@@ -69,38 +66,6 @@ pub fn show_window(app: &AppHandle) {
     }
 }
 
-/// Normally the installer created the credentials. If not, try once more off the UI
-/// thread, elevating (UAC) only when needed, so startup never blocks on the prompt.
-fn ensure_sunshine_creds(dir: PathBuf, sun: Arc<Sunshine>) {
-    if let Some(c) = sunshine::load_creds(&dir) {
-        let state = std::fs::read_to_string(sunshine::STATE_FILE).ok();
-        if !sunshine::creds_stale(&c.0, state.as_deref()) {
-            sun.set_creds(c);
-            tauri::async_runtime::spawn(async move {
-                // Sunshine may still be (re)starting: wait for it, then hide its tray
-                for _ in 0..30 {
-                    if sun.status().await.running {
-                        sun.hide_tray().await;
-                        break;
-                    }
-                    tokio::time::sleep(Duration::from_secs(2)).await;
-                }
-            });
-            return;
-        }
-        let _ = std::fs::remove_file(dir.join(sunshine::CREDS_FILE)); // stale: set up again below
-    }
-    std::thread::spawn(move || {
-        let c = sunshine::ensure_credentials(&dir)
-            .ok()
-            .or_else(|| win::sys::run_elevated("--init-sunshine").then(|| sunshine::load_creds(&dir)).flatten());
-        if let Some(c) = c {
-            sun.set_creds(c);
-            tauri::async_runtime::block_on(sun.hide_tray());
-        }
-    });
-}
-
 fn send_arg(argv: &[String]) -> Option<PathBuf> {
     let i = argv.iter().position(|a| a == "--send")?;
     argv.get(i + 1).map(PathBuf::from)
@@ -113,10 +78,6 @@ pub fn run() {
 /// Like [run], letting the binary add plugins the library (and its tests) shouldn't link.
 pub fn run_with(extra: impl FnOnce(tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry>) {
     let dir = data_dir();
-    if std::env::args().any(|a| a == "--init-sunshine") {
-        // Run elevated by the installer (or by us on first launch): creates Sunshine credentials.
-        std::process::exit(if sunshine::ensure_credentials(&dir).is_ok() { 0 } else { 1 });
-    }
     let hidden = std::env::args().any(|a| a == "--hidden");
     extra(tauri::Builder::default())
         .plugin(tauri_plugin_single_instance::init(|app, argv, _| {
@@ -150,9 +111,7 @@ pub fn run_with(extra: impl FnOnce(tauri::Builder<tauri::Wry>) -> tauri::Builder
         .setup(move |app| {
             let identity = tls::Identity::load_or_create(&dir)?;
             let store = Arc::new(Mutex::new(Store::open(&dir)?));
-            let sun = Arc::new(Sunshine::local(None));
-            ensure_sunshine_creds(dir.clone(), sun.clone());
-            let host = Arc::new(host::Host::new(store.clone(), sun.clone()));
+            let host = Arc::new(host::Host::new(store.clone()));
             let (outgoing, net) = (host.outgoing.clone(), host.net.clone());
             if store.lock().unwrap().config().anywhere {
                 let net = net.clone();
@@ -172,7 +131,7 @@ pub fn run_with(extra: impl FnOnce(tauri::Builder<tauri::Wry>) -> tauri::Builder
             let mut events = agent.events();
             let advert = mdns::Advert::start(store.lock().unwrap().pc_id(), &win::sys::pc_name());
             let mdns = Mutex::new(advert);
-            app.manage(App { store, agent: agent.clone(), sunshine: sun, fp: identity.fingerprint_hex.clone(), outgoing, net, mdns });
+            app.manage(App { store, agent: agent.clone(), fp: identity.fingerprint_hex.clone(), outgoing, net, mdns });
 
             let open = MenuItem::with_id(app, "open", "Open", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;

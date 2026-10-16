@@ -6,7 +6,13 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "t")]
 pub enum ClientMsg {
     #[serde(rename = "pair")]
-    Pair { otp: String, device: String, pin: String },
+    /// `pin` was for v1 (Sunshine); still accepted, ignored.
+    Pair {
+        otp: String,
+        device: String,
+        #[serde(default)]
+        pin: String,
+    },
     #[serde(rename = "hello")]
     Hello { v: u32, token: String, device: String },
     #[serde(rename = "ping")]
@@ -141,7 +147,6 @@ pub struct PcInfo {
     pub user: String,
     pub macs: Vec<String>,
     pub os: String,
-    pub sunshine: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -299,11 +304,10 @@ mod tests {
             user: "Sadik".into(),
             macs: vec!["AA:BB:CC:DD:EE:FF".into()],
             os: "Windows 11 Pro 26300".into(),
-            sunshine: true,
         };
         assert_eq!(
             s(&ServerMsg::Paired { token: "t".into(), pc: pc.clone() }),
-            json!({"t":"paired","token":"t","pc":{"id":"id","name":"DESKTOP-ABC","user":"Sadik","macs":["AA:BB:CC:DD:EE:FF"],"os":"Windows 11 Pro 26300","sunshine":true}})
+            json!({"t":"paired","token":"t","pc":{"id":"id","name":"DESKTOP-ABC","user":"Sadik","macs":["AA:BB:CC:DD:EE:FF"],"os":"Windows 11 Pro 26300"}})
         );
         assert_eq!(
             s(&ServerMsg::Welcome { v: 1, pc, caps: vec!["input".into()] })["caps"],

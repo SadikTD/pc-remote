@@ -186,7 +186,7 @@ struct Partial {
 /// drops 10% of media packets, rebuilds frames through FEC and asks for keyframes like the phone.
 #[test]
 fn loopback_streams_real_frames() {
-    let p = Params { w: 1280, h: 720, fps: 60, codecs: vec!["h264".into()], max_kbps: 10000, audio: true, cands: vec![], public: None };
+    let p = Params { w: 1280, h: 720, fps: 60, codecs: vec!["h264".into()], max_kbps: 10000, audio: true, cands: vec![], public: None, display: String::new() };
     let notify: Notify = Arc::new(|_| {});
     let (ready, session) = match StreamSession::start(p, IpAddr::from([127, 0, 0, 1]), notify, Box::new(|_| {})) {
         Ok(r) => r,

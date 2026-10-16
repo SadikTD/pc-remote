@@ -36,6 +36,8 @@ pub struct Params {
     pub cands: Vec<SocketAddr>,
     /// The router's public IP when UPnP mapped the stream port.
     pub public: Option<IpAddr>,
+    /// Windows device name of the display to stream; empty = primary.
+    pub display: String,
 }
 
 /// The UDP port streams use when it's free (mapped on the router by `net`).
@@ -252,7 +254,7 @@ impl Video {
     #[allow(clippy::result_large_err)] // once per stream start
     fn open(p: &Params, kbps: u32) -> Result<Video, ServerMsg> {
         let err = |code: &str, msg: &str| ServerMsg::StreamError { code: code.into(), msg: msg.into() };
-        let (dev, ctx, out, luid) = capture::device().ok_or_else(|| err("capture_failed", "no display to capture"))?;
+        let (dev, ctx, out, luid) = capture::device(&p.display).ok_or_else(|| err("capture_failed", "no display to capture"))?;
         let first = Dxgi::open(&dev, &ctx, &out).ok_or_else(|| err("capture_failed", "the desktop can't be captured right now (locked?)"))?;
         let avail = codecs_available(luid);
         let codec = p

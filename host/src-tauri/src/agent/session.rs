@@ -85,7 +85,7 @@ pub(crate) async fn serve(mut inc: impl Rx, mut ws: impl Tx, ctx: Arc<Ctx>) {
     };
     let (tx, mut rx) = mpsc::unbounded_channel();
     let device = match first {
-        Some(ClientMsg::Pair { otp, device, pin }) => {
+        Some(ClientMsg::Pair { otp, device, .. }) => {
             let device: String = device.trim().chars().take(40).collect();
             if !ctx.store.lock().unwrap().take_otp(&otp) {
                 return fail(&mut ws, "bad_otp", "pairing code is wrong or expired").await;
@@ -94,13 +94,6 @@ pub(crate) async fn serve(mut inc: impl Rx, mut ws: impl Tx, ctx: Arc<Ctx>) {
                 return fail(&mut ws, "internal", "could not save the device").await;
             };
             let _ = ctx.events.send(Event::Paired { device: id.clone() });
-            let pin_tx = tx.clone();
-            let submit = ctx.handlers.submit_pin(pin, device);
-            tokio::spawn(async move {
-                if !submit.await {
-                    let _ = pin_tx.send(Out::Msg(ServerMsg::error("pin_timeout", "Sunshine did not accept the PIN", Some("pair"))));
-                }
-            });
             let pc = ctx.handlers.pc_info().await;
             if !send(&mut ws, &ServerMsg::Paired { token, pc }).await {
                 return;

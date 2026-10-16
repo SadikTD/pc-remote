@@ -25,32 +25,6 @@ pub fn rank_ips(mut ips: Vec<(Ipv4Addr, bool)>) -> Vec<String> {
     ips.into_iter().map(|(ip, _)| ip.to_string()).collect()
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct Display {
-    pub id: String,
-    pub name: String,
-    pub primary: bool,
-}
-
-/// Sunshine wants its own display device ids for `output_name`; it only publishes them
-/// in its startup log, as a JSON array after "Currently available display devices:".
-pub fn parse_displays(log: &str) -> Vec<Display> {
-    let Some(i) = log.find("Currently available display devices:") else { return vec![] };
-    let rest = &log[i..];
-    let Some(start) = rest.find('[') else { return vec![] };
-    let mut de = serde_json::Deserializer::from_str(&rest[start..]).into_iter::<Vec<serde_json::Value>>();
-    let Some(Ok(arr)) = de.next() else { return vec![] };
-    arr.iter()
-        .filter_map(|d| {
-            Some(Display {
-                id: d["device_id"].as_str()?.into(),
-                name: d["friendly_name"].as_str().or(d["display_name"].as_str())?.into(),
-                primary: d["info"]["primary"].as_bool().unwrap_or(false),
-            })
-        })
-        .collect()
-}
-
 fn version(v: &str) -> Option<Vec<u64>> {
     v.trim_start_matches('v').split('.').map(|p| p.parse().ok()).collect()
 }
@@ -69,13 +43,11 @@ pub struct DeviceView {
 #[derive(Serialize)]
 pub struct StateView {
     name: String,
-    sunshine: bool,
     devices: Vec<DeviceView>,
 }
 
 #[tauri::command]
 pub async fn get_state(app: State<'_, App>) -> Result<StateView, String> {
-    let sunshine = app.sunshine.status().await.running;
     let connected = app.agent.connected();
     let devices = app
         .store
@@ -85,7 +57,7 @@ pub async fn get_state(app: State<'_, App>) -> Result<StateView, String> {
         .into_iter()
         .map(|d| DeviceView { connected: connected.contains(&d.id), id: d.id, name: d.name })
         .collect();
-    Ok(StateView { name: crate::win::sys::pc_name(), sunshine, devices })
+    Ok(StateView { name: crate::win::sys::pc_name(), devices })
 }
 
 /// A fresh pairing code: the QR (SVG) and the same one-time link as text, for "Copy pairing link".
@@ -133,13 +105,12 @@ pub fn rename(app: State<'_, App>, id: String, name: String) -> Result<(), Strin
 #[derive(Serialize)]
 pub struct ConfigView {
     config: Config,
-    displays: Vec<Display>,
+    displays: Vec<crate::engine::capture::Display>,
 }
 
 #[tauri::command]
 pub fn get_config(app: State<'_, App>) -> ConfigView {
-    let log = std::fs::read_to_string(r"C:\Program Files\Sunshine\config\sunshine.log").unwrap_or_default();
-    ConfigView { config: app.store.lock().unwrap().config().clone(), displays: parse_displays(&log) }
+    ConfigView { config: app.store.lock().unwrap().config().clone(), displays: crate::engine::capture::displays() }
 }
 
 #[tauri::command]
@@ -149,14 +120,9 @@ pub async fn set_config(app: State<'_, App>, config: Config) -> Result<(), Strin
     if old.autostart != config.autostart {
         crate::win::sys::set_autostart(config.autostart).map_err(|e| e.to_string())?;
     }
-    if old.display != config.display {
-        app.sunshine.set_config("output_name", &config.display).await.map_err(|e| format!("{e:?}"))?;
-    }
     if old.anywhere != config.anywhere {
         let st = crate::net::apply_now(config.anywhere).await;
         *app.net.lock().unwrap() = st;
-        let v = if config.anywhere { "enabled" } else { "disabled" };
-        app.sunshine.set_config("upnp", v).await.map_err(|e| format!("{e:?}"))?;
     }
     Ok(())
 }
@@ -283,32 +249,6 @@ mod tests {
             rank_ips(ips),
             vec!["192.168.0.126", "10.0.0.5", "192.168.56.1", "172.20.0.1", "100.101.1.2", "172.32.0.1"]
         );
-    }
-
-    #[test]
-    fn displays_parsed_from_sunshine_log() {
-        let log = r#"[2026-10-15 21:24:24.328]: Info: something
-[2026-10-15 21:24:24.333]: Info: Currently available display devices:
-[
-  {
-    "device_id": "{0613302e-c22e-560f-a2a6-789bf9656cfa}",
-    "display_name": "\\\\.\\DISPLAY1",
-    "friendly_name": "M27QA ICE",
-    "info": { "primary": false }
-  },
-  {
-    "device_id": "{14b6e91b-9400-5efb-a888-60b537faaafa}",
-    "display_name": "\\\\.\\DISPLAY2",
-    "friendly_name": "M27Q2",
-    "info": { "primary": true }
-  }
-]
-[2026-10-15 21:24:24.400]: Info: next line"#;
-        let d = parse_displays(log);
-        assert_eq!(d.len(), 2);
-        assert_eq!(d[0], Display { id: "{0613302e-c22e-560f-a2a6-789bf9656cfa}".into(), name: "M27QA ICE".into(), primary: false });
-        assert!(d[1].primary);
-        assert!(parse_displays("no displays here").is_empty());
     }
 
     #[test]

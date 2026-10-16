@@ -118,7 +118,7 @@ mod tests {
 
     #[test]
     fn converts_on_this_gpu() {
-        let Some((dev, ctx, _, _)) = crate::engine::capture::device() else { return eprintln!("no D3D11 device") };
+        let Some((dev, ctx, _, _)) = crate::engine::capture::device("") else { return eprintln!("no D3D11 device") };
         // SAFETY: test-only texture creation.
         let src = unsafe {
             let desc = D3D11_TEXTURE2D_DESC {

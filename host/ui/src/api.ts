@@ -15,7 +15,7 @@ export const listen = (name: string, cb: () => void) => window.__TAURI__.event.l
 export const appWindow = () => window.__TAURI__.window.getCurrentWindow();
 
 export interface Device { id: string; name: string; connected: boolean }
-export interface State { name: string; sunshine: boolean; devices: Device[] }
+export interface State { name: string; devices: Device[] }
 export interface Config {
   autostart: boolean; display: string; max_quality: string;
   allow_files: boolean; allow_clip: boolean; anywhere: boolean; files_dir: string;

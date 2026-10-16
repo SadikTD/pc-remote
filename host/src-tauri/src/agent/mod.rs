@@ -61,8 +61,6 @@ impl Outbox {
 /// What the agent needs from the rest of the host.
 pub trait Handlers: Send + Sync + 'static {
     fn pc_info(&self) -> BoxFut<PcInfo>;
-    /// Submits a Moonlight PIN to Sunshine; false once it gave up (`pin_timeout`).
-    fn submit_pin(&self, pin: String, name: String) -> BoxFut<bool>;
     /// Capabilities for `welcome`.
     fn caps(&self) -> Vec<String>;
     fn session(&self, device: &str, out: Outbox) -> Box<dyn Session>;

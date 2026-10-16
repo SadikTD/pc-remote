@@ -3,7 +3,6 @@ import { h, invoke, type State } from "../api";
 const TTL = 120;
 
 function status(s: State): [string, string] {
-  if (!s.sunshine) return ["warn", "Starting screen sharing"];
   const n = s.devices.filter((d) => d.connected).length;
   if (n === 1) return ["live", "Remote connected"];
   if (n > 1) return ["live", `${n} phones connected`];

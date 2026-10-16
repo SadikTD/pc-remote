@@ -3,7 +3,6 @@
 use crate::agent::{BoxFut, Handlers, Outbox, Session};
 use crate::proto::{ClientMsg, PcInfo, ServerMsg};
 use crate::store::Store;
-use crate::sunshine::{self, Sunshine};
 use crate::files::{self, Incoming, Outgoing};
 use crate::pad::{self, Pads};
 use crate::engine::session::{Params, StreamSession};
@@ -12,7 +11,6 @@ use std::sync::{Arc, Mutex};
 
 pub struct Host {
     pub store: Arc<Mutex<Store>>,
-    pub sunshine: Arc<Sunshine>,
     pub outgoing: Outgoing,
     /// None when the ViGEmBus driver isn't installed.
     pads: Option<Arc<dyn pad::Bus>>,
@@ -21,35 +19,18 @@ pub struct Host {
 }
 
 impl Host {
-    pub fn new(store: Arc<Mutex<Store>>, sunshine: Arc<Sunshine>) -> Self {
+    pub fn new(store: Arc<Mutex<Store>>) -> Self {
         let pads = pad::ViGEm::connect().map(|b| Arc::new(b) as Arc<dyn pad::Bus>);
-        Host { store, sunshine, outgoing: Outgoing::default(), pads, lingering: Default::default(), net: Arc::default() }
+        Host { store, outgoing: Outgoing::default(), pads, lingering: Default::default(), net: Arc::default() }
     }
 }
 
 impl Handlers for Host {
     fn pc_info(&self) -> BoxFut<PcInfo> {
-        let (sun, id) = (self.sunshine.clone(), self.store.lock().unwrap().pc_id().to_string());
+        let id = self.store.lock().unwrap().pc_id().to_string();
         Box::pin(async move {
-            let running = sun.status().await.running;
-            if !running {
-                // Event-driven recovery: a phone connected and Sunshine is down, so start it.
-                tokio::task::spawn_blocking(sunshine::start_service);
-            }
-            PcInfo {
-                id,
-                name: win::sys::pc_name(),
-                user: win::sys::user_name(),
-                macs: win::sys::adapters().1,
-                os: win::sys::os_name(),
-                sunshine: running,
-            }
+            PcInfo { id, name: win::sys::pc_name(), user: win::sys::user_name(), macs: win::sys::adapters().1, os: win::sys::os_name() }
         })
-    }
-
-    fn submit_pin(&self, pin: String, name: String) -> BoxFut<bool> {
-        let sun = self.sunshine.clone();
-        Box::pin(async move { sun.submit_pin(&pin, &name).await.is_ok() })
     }
 
     fn caps(&self) -> Vec<String> {
@@ -213,7 +194,8 @@ impl Session for HostSession {
                 let st = self.net.lock().unwrap().clone();
                 let public = st.public.filter(|_| st.upnp).and_then(|ip| ip.parse().ok());
                 let (fps, max_kbps) = (if fps == 0 { 60 } else { fps }, if max_kbps == 0 { 20000 } else { max_kbps });
-                let p = Params { w, h, fps, codecs, max_kbps, audio, cands, public };
+                let display = self.store.lock().unwrap().config().display.clone();
+                let p = Params { w, h, fps, codecs, max_kbps, audio, cands, public, display };
                 let out = self.out.clone();
                 let notify: crate::engine::session::Notify = Arc::new(move |m| {
                     out.send(m);

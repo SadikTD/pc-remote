@@ -12,7 +12,7 @@ import kotlinx.serialization.json.jsonPrimitive
 @Serializable
 data class PcInfo(
     val id: String, val name: String, val user: String = "", val macs: List<String> = emptyList(),
-    val os: String = "", val sunshine: Boolean = true,
+    val os: String = "",
 )
 
 @Serializable
