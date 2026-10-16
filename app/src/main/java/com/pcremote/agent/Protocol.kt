@@ -22,7 +22,7 @@ sealed interface Msg {
     @Serializable @SerialName("ping") data object Ping : Msg
     @Serializable @SerialName("pong") data object Pong : Msg
     @Serializable @SerialName("paired") data class Paired(val token: String, val pc: PcInfo) : Msg
-    @Serializable @SerialName("welcome") data class Welcome(val v: Int, val pc: PcInfo, val caps: List<String>) : Msg
+    @Serializable @SerialName("welcome") data class Welcome(val v: Int, val pc: PcInfo, val caps: List<String>, val locked: Boolean = false) : Msg
     @Serializable @SerialName("error") data class Error(val code: String, val msg: String = "", val of: String? = null) : Msg
     @Serializable @SerialName("ok") data class Ok(val of: String? = null) : Msg
 
@@ -56,6 +56,14 @@ sealed interface Msg {
     @Serializable @SerialName("file.offer") data class FileOffer(val id: String, val name: String, val size: Long) : Msg
     @Serializable @SerialName("file.accept") data class FileAccept(val id: String, val offset: Long) : Msg
     @Serializable @SerialName("file.reject") data class FileReject(val id: String) : Msg
+    @Serializable @SerialName("file.cancel") data class FileCancel(val id: String) : Msg
+    /** Request (`entries` empty) and reply share the type. `path` "" = the PC's folders and drives. */
+    @Serializable @SerialName("fs.list") data class FsList(val path: String, val entries: List<FsEntry> = emptyList()) : Msg
+    @Serializable @SerialName("fs.get") data class FsGet(val path: String) : Msg
+
+    @Serializable @SerialName("unlock") data class Unlock(val secret: String) : Msg
+    @Serializable @SerialName("unlock.result") data class UnlockResult(val ok: Boolean) : Msg
+    @Serializable @SerialName("lock") data class Lock(val locked: Boolean) : Msg
 
     @Serializable @SerialName("power") data class Power(val a: String) : Msg
     @Serializable @SerialName("thumb.sub") data class ThumbSub(val on: Boolean) : Msg
@@ -87,6 +95,8 @@ sealed interface Msg {
         val lan: List<String>, val public: String? = null, val anywhere: Boolean = false, val upnp: Boolean = false,
     ) : Msg
 }
+
+@Serializable data class FsEntry(val name: String, val path: String, val dir: Boolean, val size: Long = 0, val mtime: Long = 0)
 
 @Serializable data class DisplayInfo(val id: String, val name: String, val primary: Boolean = false)
 

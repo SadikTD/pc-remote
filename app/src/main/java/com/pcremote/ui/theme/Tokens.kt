@@ -20,18 +20,22 @@ data class Palette(
     val textDim: Long,
 )
 
+/**
+ * v3 "screen glow": a deep blue-black room lit by the PC's own screen. One indigo accent; green,
+ * amber and red only ever mean live, waiting and wrong.
+ */
 object Midnight {
     val dark = Palette(
-        bg = 0xFF0B0D12, surface = 0xFF141821, surfaceHigh = 0xFF1C2130, border = 0x14FFFFFF,
-        accent = 0xFF7C8CFF, accent2 = 0xFF4FD1FF, onAccent = 0xFF0B0D12,
-        ok = 0xFF3DDC97, warn = 0xFFFFC857, bad = 0xFFFF5D73,
-        text = 0xFFE9ECF5, textDim = 0xFF8F98AD,
+        bg = 0xFF05070C, surface = 0xFF0D111A, surfaceHigh = 0xFF161B27, border = 0x1FFFFFFF,
+        accent = 0xFF7C93FF, accent2 = 0xFF5468F0, onAccent = 0xFF05070C,
+        ok = 0xFF34D399, warn = 0xFFFBBF24, bad = 0xFFF87171,
+        text = 0xFFF2F4FA, textDim = 0xFF98A2B8,
     )
     val light = Palette(
-        bg = 0xFFF6F7FB, surface = 0xFFFFFFFF, surfaceHigh = 0xFFEEF0F6, border = 0x140B0D12,
-        accent = 0xFF4F5BD5, accent2 = 0xFF0A8FC2, onAccent = 0xFFFFFFFF,
-        ok = 0xFF1E9E69, warn = 0xFFB7791F, bad = 0xFFD63A55,
-        text = 0xFF0E1220, textDim = 0xFF5A6275,
+        bg = 0xFFF3F5FA, surface = 0xFFFFFFFF, surfaceHigh = 0xFFE9EDF5, border = 0x1A05070C,
+        accent = 0xFF3A50D9, accent2 = 0xFF2B3FB8, onAccent = 0xFFFFFFFF,
+        ok = 0xFF0F8A5F, warn = 0xFFA16207, bad = 0xFFC2334A,
+        text = 0xFF0B0F1A, textDim = 0xFF566077,
     )
 }
 

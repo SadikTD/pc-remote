@@ -27,6 +27,7 @@ import com.pcremote.quality.QualityPreset
 import com.pcremote.quality.QualityPrefs
 import com.pcremote.ui.theme.LocalMidnight
 import com.pcremote.ui.theme.MidnightShapes
+import com.pcremote.ui.components.glass
 import com.pcremote.ui.theme.rememberHaptics
 
 private const val REPO_URL = "https://github.com/SadikTD/pc-remote"
@@ -44,9 +45,12 @@ fun SettingsScreen(model: SettingsModel, onBack: () -> Unit, onThemeChanged: () 
     var auto by remember { mutableStateOf(QualityPrefs.isAuto(ctx)) }
     var preset by remember { mutableStateOf(QualityPrefs.current(ctx)) }
 
-    Column(Modifier.fillMaxSize().background(c.bg).safeDrawingPadding().verticalScroll(rememberScrollState()).padding(20.dp)) {
+    Box(Modifier.fillMaxSize().background(c.bg)) {
+    com.pcremote.ui.components.Aurora(intensity = 0.4f)
+    Column(Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(20.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, null, tint = c.text) }
+            com.pcremote.ui.components.GlassIconButton(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.pcr_back), onBack)
+            Spacer(Modifier.width(14.dp))
             Text(stringResource(R.string.pcr_settings), color = c.text, style = MaterialTheme.typography.headlineMedium)
         }
 
@@ -91,8 +95,16 @@ fun SettingsScreen(model: SettingsModel, onBack: () -> Unit, onThemeChanged: () 
             SliderRow(Icons.Rounded.ScreenRotation, R.string.pcr_gyro_sensitivity, gyro, 0.25f..3f) { gyro = it; model.gyroSensitivity = it }
         }
 
+        WakeGroup()
+        UnlockGroup()
+
         Group(R.string.pcr_set_about) {
             LinkRow(Icons.Rounded.Info, R.string.pcr_version, null, trailing = BuildConfig.VERSION_NAME) {}
+            var checking by remember { mutableStateOf(false) }
+            LinkRow(Icons.Rounded.SystemUpdate, R.string.pcr_update_check, R.string.pcr_update_check_desc, trailing = if (checking) "…" else null) {
+                checking = true
+                com.pcremote.update.Updater.checkNow(ctx) { checking = false }
+            }
             LinkRow(Icons.Rounded.Code, R.string.pcr_source, R.string.pcr_source_desc) {
                 ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(REPO_URL)))
             }
@@ -102,15 +114,59 @@ fun SettingsScreen(model: SettingsModel, onBack: () -> Unit, onThemeChanged: () 
         }
         Spacer(Modifier.height(24.dp))
     }
+    }
+}
+
+/** Wake from anywhere through Home Assistant. */
+@Composable
+private fun WakeGroup() {
+    val c = LocalMidnight.current
+    val ctx = LocalContext.current
+    val ha = remember { com.pcremote.home.HomeAssistant.get(ctx) }
+    var url by remember { mutableStateOf(ha.url) }
+    var token by remember { mutableStateOf(ha.token) }
+    var saved by remember { mutableStateOf(false) }
+    Group(R.string.pcr_set_wake) {
+        Text(stringResource(R.string.pcr_ha_desc), color = c.textDim, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(12.dp, 8.dp, 12.dp, 4.dp))
+        OutlinedTextField(url, { url = it; saved = false }, singleLine = true, label = { Text(stringResource(R.string.pcr_ha_url)) },
+            placeholder = { Text("https://home.example.com") }, modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp))
+        OutlinedTextField(token, { token = it; saved = false }, singleLine = true, label = { Text(stringResource(R.string.pcr_ha_token)) },
+            visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp))
+        Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            com.pcremote.ui.components.GhostButton(stringResource(if (saved) R.string.pcr_saved else R.string.pcr_save), {
+                ha.url = url; ha.token = token; url = ha.url; saved = true
+            }, icon = if (saved) Icons.Rounded.Check else Icons.Rounded.Save)
+        }
+    }
+}
+
+/** PINs kept behind the fingerprint, one per PC. */
+@Composable
+private fun UnlockGroup() {
+    val c = LocalMidnight.current
+    val ctx = LocalContext.current
+    val pcs = remember { com.pcremote.agent.PcStore.get(ctx).all() }
+    var tick by remember { mutableIntStateOf(0) }
+    Group(R.string.pcr_set_unlock) {
+        Text(stringResource(if (com.pcremote.agent.PinVault.available(ctx)) R.string.pcr_unlock_settings_desc else R.string.pcr_unlock_settings_nofp),
+            color = c.textDim, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(12.dp, 8.dp, 12.dp, 4.dp))
+        key(tick) {
+            pcs.filter { com.pcremote.agent.PinVault.has(ctx, it.id) }.forEach { pc ->
+                RowShell(Icons.Rounded.Fingerprint, R.string.pcr_unlock_saved_for, null, null, label = pc.name) {
+                    TextButton({ com.pcremote.agent.PinVault.forget(ctx, pc.id); tick++ }) { Text(stringResource(R.string.pcr_forget), color = c.bad) }
+                }
+            }
+        }
+    }
 }
 
 @Composable
 private fun Group(title: Int, content: @Composable ColumnScope.() -> Unit) {
     val c = LocalMidnight.current
     Spacer(Modifier.height(24.dp))
-    Text(stringResource(title).uppercase(), color = c.textDim, style = MaterialTheme.typography.labelSmall, letterSpacing = 1.2.sp,
-        modifier = Modifier.padding(start = 8.dp, bottom = 8.dp))
-    Column(Modifier.fillMaxWidth().clip(MidnightShapes.card).background(c.surface).padding(8.dp), content = content)
+    Text(stringResource(title), color = c.textDim, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 8.dp, bottom = 8.dp))
+    Column(Modifier.fillMaxWidth().glass().padding(8.dp), content = content)
 }
 
 @Composable
@@ -124,7 +180,7 @@ private fun Segment(text: String, selected: Boolean, modifier: Modifier, onClick
 }
 
 @Composable
-private fun RowShell(icon: ImageVector, title: Int, desc: Int?, onClick: (() -> Unit)?, trailing: @Composable () -> Unit) {
+private fun RowShell(icon: ImageVector, title: Int, desc: Int?, onClick: (() -> Unit)?, label: String? = null, trailing: @Composable () -> Unit) {
     val c = LocalMidnight.current
     Row(
         Modifier.fillMaxWidth().clip(MidnightShapes.control).then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
@@ -134,7 +190,7 @@ private fun RowShell(icon: ImageVector, title: Int, desc: Int?, onClick: (() -> 
         Icon(icon, null, tint = c.accent, modifier = Modifier.size(22.dp))
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
-            Text(stringResource(title), color = c.text, style = MaterialTheme.typography.bodyLarge)
+            Text(label ?: stringResource(title), color = c.text, style = MaterialTheme.typography.bodyLarge)
             if (desc != null) Text(stringResource(desc), color = c.textDim, style = MaterialTheme.typography.bodySmall)
         }
         trailing()

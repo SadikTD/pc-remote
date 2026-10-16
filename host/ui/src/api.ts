@@ -10,7 +10,11 @@ declare global {
   }
 }
 
-export const invoke = <T>(cmd: string, args?: Record<string, unknown>) => window.__TAURI__.core.invoke<T>(cmd, args);
+/** Commands the tray process runs itself (file pickers, Explorer); the server answers the rest. */
+const LOCAL = new Set(["send_file", "pick_files_dir", "open_files_dir", "open_release"]);
+
+export const invoke = <T>(cmd: string, args?: Record<string, unknown>) =>
+  LOCAL.has(cmd) ? window.__TAURI__.core.invoke<T>(cmd, args) : window.__TAURI__.core.invoke<T>("call", { cmd, args: args ?? null });
 export const listen = (name: string, cb: () => void) => window.__TAURI__.event.listen(name, cb);
 export const appWindow = () => window.__TAURI__.window.getCurrentWindow();
 

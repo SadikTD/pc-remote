@@ -6,6 +6,17 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Fingerprint unlock of the PC -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <!-- Transfers keep going in the background, with a progress notification -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Self-updates from GitHub releases -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
+    <uses-permission android:name="android.permission.ENFORCE_UPDATE_OWNERSHIP" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <!-- We don't need a MulticastLock on API level 34+ because we use NsdManager for mDNS -->
@@ -66,6 +77,17 @@
                 <data android:mimeType="*/*" />
             </intent-filter>
         </activity>
+        <service
+            android:name="com.pcremote.modes.TransferService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+        <service
+            android:name="com.pcremote.update.UpdateJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+        <receiver
+            android:name="com.pcremote.update.UpdateReceiver"
+            android:exported="false" />
     </application>
 
 </manifest>

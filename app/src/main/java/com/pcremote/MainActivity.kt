@@ -81,6 +81,11 @@ class MainActivity : ComponentActivity() {
             device = Build.MODEL,
         ))
         handlePairLink(intent)
+        com.pcremote.update.Updater.schedule(this)
+        // transfer progress and update prompts are notifications
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1)
+        }
         val start = Routes.start(if (home.store.all().isNotEmpty()) 1 else 0, prefs.getBoolean(PREF_ONBOARDED, false))
 
         setContent {
@@ -161,6 +166,7 @@ class MainActivity : ComponentActivity() {
                             rename = { card, name -> home.rename(card.id, name) },
                             remove = { card -> home.remove(card) },
                             send = { card, m -> home.connection(card.id)?.send(m) },
+                            connection = { card -> home.connection(card.id) },
                         ))
                         PairingOverlay(pairState,
                             onRetry = { pairing.reset(); scanQr(this@MainActivity, onUnavailable = ::manualPairing) { raw -> scope.launch { pairing.onScanned(raw) } } },
@@ -179,7 +185,12 @@ class MainActivity : ComponentActivity() {
     private fun wake(card: com.pcremote.home.PcCardUi) {
         thread {
             val ok = home.wake(card)
-            runOnUiThread { Toast.makeText(this, if (ok == null) R.string.pcr_wol_no_mac else R.string.pcr_wol_sent, Toast.LENGTH_SHORT).show() }
+            val msg = when (ok) {
+                null -> R.string.pcr_wol_no_mac
+                true -> if (com.pcremote.home.HomeAssistant.get(this).configured) R.string.pcr_wol_sent_ha else R.string.pcr_wol_sent
+                false -> R.string.pcr_wol_failed
+            }
+            runOnUiThread { Toast.makeText(this, msg, Toast.LENGTH_LONG).show() }
         }
     }
 

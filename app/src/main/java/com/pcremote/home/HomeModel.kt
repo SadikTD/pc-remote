@@ -15,6 +15,11 @@ data class PcCardUi(
     val primary: PrimaryAction,
     /** The host advertises power actions. */
     val canPower: Boolean = false,
+    /** Showing its lock or sign-in screen. */
+    val locked: Boolean = false,
+    /** The host can type a PIN on its lock screen. */
+    val canUnlock: Boolean = false,
+    val os: String = "",
 )
 
 object HomeModel {
@@ -27,7 +32,7 @@ object HomeModel {
         if ("files" in caps) add(Mode.FILES)
     }
 
-    fun cards(agents: List<PairedPc>, live: Map<String, AgentState>, streaming: Map<String, Boolean>): List<PcCardUi> =
+    fun cards(agents: List<PairedPc>, live: Map<String, AgentState>, streaming: Map<String, Boolean>, locked: Map<String, Boolean> = emptyMap()): List<PcCardUi> =
         agents.map { pc ->
             val st = live[pc.id]
             val online = st is AgentState.Online
@@ -38,6 +43,9 @@ object HomeModel {
                 else -> PrimaryAction.OFFLINE_HELP
             }
             PcCardUi(pc.id, pc.name, online, streaming[pc.id] == true, (st as? AgentState.Online)?.caps.orEmpty().let(::capModes), primary,
-                canPower = st is AgentState.Online && "power" in st.caps)
+                canPower = st is AgentState.Online && "power" in st.caps,
+                locked = online && locked[pc.id] == true,
+                canUnlock = st is AgentState.Online && "unlock" in st.caps,
+                os = (st as? AgentState.Online)?.pc?.os.orEmpty())
         }
 }

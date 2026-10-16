@@ -29,20 +29,24 @@ impl Handlers for Host {
     fn pc_info(&self) -> BoxFut<PcInfo> {
         let id = self.store.lock().unwrap().pc_id().to_string();
         Box::pin(async move {
-            PcInfo { id, name: win::sys::pc_name(), user: win::sys::user_name(), macs: win::sys::adapters().1, os: win::sys::os_name() }
+            PcInfo { id, name: win::sys::pc_name(), user: win::session::user_name(), macs: win::sys::adapters().1, os: win::sys::os_name() }
         })
     }
 
     fn caps(&self) -> Vec<String> {
-        let mut c: Vec<String> = ["input", "power", "media", "files", "clip", "thumb", "net", "stream"].map(String::from).to_vec();
+        let mut c: Vec<String> = ["input", "power", "media", "files", "clip", "thumb", "net", "stream", "unlock", "fsbrowse"].map(String::from).to_vec();
         if self.pads.is_some() {
             c.push("pad".into());
         }
         c
     }
 
+    fn locked(&self) -> bool {
+        win::desk::is_locked()
+    }
+
     fn session(&self, device: &str, out: Outbox) -> Box<dyn Session> {
-        let dir = self.store.lock().unwrap().config().files_dir.clone();
+        let dir = self.store.lock().unwrap().files_dir();
         let pads = self.pads.clone().map(|bus| {
             let out = out.clone();
             Pads::new(bus, Box::new(move |id, lo, hi| {
@@ -292,6 +296,44 @@ impl Session for HostSession {
             }
             ClientMsg::FileReject { id } => {
                 self.outgoing.lock().unwrap().remove(&id);
+                None
+            }
+            ClientMsg::FileCancel { id } => {
+                self.incoming.cancel(&id);
+                self.outgoing.lock().unwrap().remove(&id);
+                None
+            }
+            ClientMsg::FsList { path } => {
+                if !self.store.lock().unwrap().config().allow_files {
+                    return err("unsupported", "file transfer is off on this PC");
+                }
+                match files::list(&path, &win::session::user_profile()) {
+                    Ok(entries) => Some(ServerMsg::FsList { path, entries }),
+                    Err(e) => err("denied", &e.to_string()),
+                }
+            }
+            ClientMsg::FsGet { path } => {
+                if !self.store.lock().unwrap().config().allow_files {
+                    return err("unsupported", "file transfer is off on this PC");
+                }
+                let (outgoing, out) = (self.outgoing.clone(), self.out.clone());
+                tokio::task::spawn_blocking(move || match files::offer_tree(&outgoing, std::path::Path::new(&path)) {
+                    Ok(offers) => offers.into_iter().for_each(|m| {
+                        out.send(m);
+                    }),
+                    Err(e) => {
+                        out.send(ServerMsg::error("denied", &e.to_string(), Some("fs.get")));
+                    }
+                });
+                None
+            }
+            ClientMsg::Unlock { secret } => {
+                let out = self.out.clone();
+                tokio::task::spawn_blocking(move || {
+                    let ok = crate::unlock::unlock(&secret);
+                    crate::log::line(&format!("unlock: {}", if ok { "unlocked" } else { "still locked" }));
+                    out.send(ServerMsg::UnlockResult { ok });
+                });
                 None
             }
             _ => err("unsupported", "not supported by this PC yet"),

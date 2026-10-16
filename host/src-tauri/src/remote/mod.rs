@@ -28,7 +28,7 @@ pub fn turn_server(store: &std::sync::Mutex<crate::store::Store>) -> Option<(std
     };
     let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
     let url = format!("{base}/v1/turn?role=host&pc={pc}&ts={ts}&sig={}", host_sig(&key, &pc, ts));
-    let body: serde_json::Value = tauri::async_runtime::block_on(async {
+    let body: serde_json::Value = tokio::runtime::Builder::new_current_thread().enable_all().build().ok()?.block_on(async {
         let r = match reqwest::Client::new().post(&url).timeout(std::time::Duration::from_secs(5)).send().await {
             Ok(r) => r,
             Err(e) => {

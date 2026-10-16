@@ -163,6 +163,8 @@ pub struct Dxgi {
 
 impl Dxgi {
     pub fn open(dev: &ID3D11Device, ctx: &ID3D11DeviceContext, output: &IDXGIOutput1) -> Option<Dxgi> {
+        // the lock screen and UAC prompts are another desktop: duplicate the one being shown
+        crate::win::desk::follow();
         // SAFETY: D3D calls on live objects.
         unsafe {
             let dup = output.DuplicateOutput(dev).ok()?;

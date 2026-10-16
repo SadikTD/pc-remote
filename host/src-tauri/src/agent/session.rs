@@ -108,7 +108,7 @@ pub(crate) async fn serve(mut inc: impl Rx, mut ws: impl Tx, ctx: Arc<Ctx>) {
             match auth {
                 Ok(id) => {
                     let pc = ctx.handlers.pc_info().await;
-                    if !send(&mut ws, &ServerMsg::Welcome { v: 1, pc, caps: ctx.handlers.caps() }).await {
+                    if !send(&mut ws, &ServerMsg::Welcome { v: 1, pc, caps: ctx.handlers.caps(), locked: ctx.handlers.locked() }).await {
                         return;
                     }
                     if let Some(m) = remote(&ctx, &id) {

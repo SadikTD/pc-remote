@@ -23,20 +23,21 @@ import kotlinx.coroutines.launch
  * Live data for Home: paired PCs, with agent connections that are
  * open only while Home is visible ([start]/[stop]), so nothing runs in the background.
  */
-class HomeController(ctx: Context, private val scope: CoroutineScope) {
+class HomeController(private val ctx: Context, private val scope: CoroutineScope) {
     val store = PcStore.get(ctx)
     /** Same-network discovery: a paired PC that turns up (or changes address) connects with no taps. */
     private val lan = com.pcremote.discovery.Lan(ctx) { found -> scope.launch { onLan(found) } }
     private val paired = MutableStateFlow<List<PairedPc>>(emptyList())
     private val live = MutableStateFlow<Map<String, AgentState>>(emptyMap())
     private val streaming = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+    private val locked = MutableStateFlow<Map<String, Boolean>>(emptyMap())
     private val _thumbs = MutableStateFlow<Map<String, ImageBitmap>>(emptyMap())
     val thumbs: StateFlow<Map<String, ImageBitmap>> = _thumbs
     private val conns = mutableMapOf<String, AgentConnection>()
     private val jobs = mutableListOf<Job>()
 
-    val cards: StateFlow<List<PcCardUi>> = combine(paired, live, streaming) { agents, l, s ->
-        HomeModel.cards(agents, l, s)
+    val cards: StateFlow<List<PcCardUi>> = combine(paired, live, streaming, locked) { agents, l, s, lk ->
+        HomeModel.cards(agents, l, s, lk)
     }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
     fun refreshStore() { scope.launch(kotlinx.coroutines.Dispatchers.IO) { paired.value = store.all() } }
@@ -76,7 +77,7 @@ class HomeController(ctx: Context, private val scope: CoroutineScope) {
         jobs += scope.launch {
             c.incoming.collect { m ->
                 if (m is Msg.Status) streaming.value = streaming.value + (pc.id to m.streaming)
-                if (m is Msg.FileOffer) c.send(Msg.FileReject(m.id)) // files are received on the Files screen
+                if (m is Msg.FileOffer) com.pcremote.modes.TransferHub.get(ctx, pc.id).offer(m) // received in the background
                 if (m is Msg.Remote) com.pcremote.agent.RelayInfo.b64url(m.ticket)?.let { t ->
                     val relay = com.pcremote.agent.RelayInfo(m.url, pc.id, m.dev, t)
                     val cur = store.all().firstOrNull { it.id == pc.id }
@@ -89,6 +90,7 @@ class HomeController(ctx: Context, private val scope: CoroutineScope) {
                 }
             }
         }
+        jobs += scope.launch { c.locked.collect { locked.value = locked.value + (pc.id to it) } }
         jobs += scope.launch {
             c.binary.collect { b ->
                 if (b.isNotEmpty() && b[0].toInt() == 2) {
@@ -114,9 +116,15 @@ class HomeController(ctx: Context, private val scope: CoroutineScope) {
         store.all().firstOrNull { it.id == id }?.let { store.upsert(it.copy(name = name)); refreshStore() }
     }
 
-    /** Wakes the card's PC with its MACs (broadcast and each stored address). Blocking. */
+    /**
+     * Wakes the card's PC: magic packets on this network, and through Home Assistant (from anywhere)
+     * when it is set up. Blocking; null when the PC's MAC is unknown.
+     */
     fun wake(card: PcCardUi): Boolean? {
         val pc = paired.value.firstOrNull { it.id == card.id }?.takeIf { it.macs.isNotEmpty() } ?: return null
-        return WakeOnLan.send(pc.macs, pc.hosts)
+        val lan = WakeOnLan.send(pc.macs, pc.hosts)
+        val ha = HomeAssistant.get(ctx)
+        return if (ha.configured) ha.wake(pc.macs).isSuccess || lan else lan
     }
+
 }

@@ -1,3 +1,4 @@
+pub mod desk;
 pub mod dpapi;
-pub mod elevate;
+pub mod session;
 pub mod sys;

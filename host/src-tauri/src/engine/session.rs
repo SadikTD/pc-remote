@@ -375,6 +375,7 @@ impl Video {
     #[allow(clippy::result_large_err)] // once per stream start
     fn open(p: &Params, kbps: u32) -> Result<Video, ServerMsg> {
         let err = |code: &str, msg: &str| ServerMsg::StreamError { code: code.into(), msg: msg.into() };
+        crate::win::desk::wake_display(); // a display asleep from inactivity has nothing to capture
         let (dev, ctx, out, luid) = capture::device(&p.display).ok_or_else(|| err("capture_failed", "no display to capture"))?;
         let shown = capture::describe(&out).ok_or_else(|| err("capture_failed", "no display to capture"))?;
         let first = Dxgi::open(&dev, &ctx, &out).ok_or_else(|| err("capture_failed", "the desktop can't be captured right now (locked?)"))?;

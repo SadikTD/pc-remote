@@ -1,4 +1,4 @@
-//! A small rolling diagnostics log at %APPDATA%\PC Remote\host.log (kept under 256 KB).
+//! A small rolling diagnostics log at %ProgramData%\PC Remote\host.log (kept under 256 KB).
 
 use std::io::Write;
 

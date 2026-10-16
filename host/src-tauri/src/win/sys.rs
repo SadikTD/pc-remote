@@ -1,30 +1,18 @@
-//! Small Windows queries and settings: names, adapters, autostart, elevation.
+//! Small Windows queries and settings: names, adapters, file pickers, the Explorer verb.
 
 use std::net::Ipv4Addr;
-use windows::core::{w, HSTRING, PCWSTR};
-use windows::Win32::Foundation::CloseHandle;
+use windows::core::{w, PCWSTR};
 use windows::Win32::NetworkManagement::IpHelper::{
     GetAdaptersAddresses, GAA_FLAG_INCLUDE_GATEWAYS, GAA_FLAG_SKIP_ANYCAST, GAA_FLAG_SKIP_DNS_SERVER,
     GAA_FLAG_SKIP_MULTICAST, IP_ADAPTER_ADDRESSES_LH,
 };
 use windows::Win32::NetworkManagement::Ndis::IfOperStatusUp;
 use windows::Win32::Networking::WinSock::{AF_INET, SOCKADDR_IN};
-use windows::Win32::System::Registry::{
-    RegDeleteKeyValueW, RegGetValueW, RegSetKeyValueW, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, REG_SZ, RRF_RT_REG_SZ,
-};
-use windows::Win32::System::Threading::{WaitForSingleObject, INFINITE};
-use windows::Win32::UI::Shell::{ShellExecuteExW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW};
-
-const RUN_KEY: PCWSTR = w!(r"Software\Microsoft\Windows\CurrentVersion\Run");
-const RUN_VALUE: PCWSTR = w!("PC Remote");
+use windows::Win32::System::Registry::{RegGetValueW, RegSetKeyValueW, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, REG_SZ, RRF_RT_REG_SZ};
 const IF_TYPE_SOFTWARE_LOOPBACK: u32 = 24;
 
 pub fn pc_name() -> String {
     std::env::var("COMPUTERNAME").unwrap_or_else(|_| "PC".into())
-}
-
-pub fn user_name() -> String {
-    std::env::var("USERNAME").unwrap_or_default()
 }
 
 fn reg_sz(name: PCWSTR) -> Option<String> {
@@ -101,45 +89,6 @@ pub fn adapters() -> (Vec<(Ipv4Addr, bool)>, Vec<String>) {
         }
     }
     (ips, macs)
-}
-
-/// Start with Windows (per user): HKCU Run → `"exe" --hidden`.
-pub fn set_autostart(on: bool) -> windows::core::Result<()> {
-    // SAFETY: registry calls with valid, NUL-terminated wide strings.
-    unsafe {
-        if on {
-            let exe = std::env::current_exe().map_err(|e| windows::core::Error::new(windows::core::HRESULT(-1), e.to_string()))?;
-            let cmd: Vec<u16> = format!("\"{}\" --hidden", exe.display()).encode_utf16().chain([0]).collect();
-            RegSetKeyValueW(HKEY_CURRENT_USER, RUN_KEY, RUN_VALUE, REG_SZ.0, Some(cmd.as_ptr().cast()), (cmd.len() * 2) as u32).ok()
-        } else {
-            let r = RegDeleteKeyValueW(HKEY_CURRENT_USER, RUN_KEY, RUN_VALUE);
-            if r.0 == 2 { Ok(()) } else { r.ok() } // already absent
-        }
-    }
-}
-
-/// Re-runs this exe elevated (UAC prompt) with `args` and waits for it. False if declined.
-pub fn run_elevated(args: &str) -> bool {
-    let Ok(exe) = std::env::current_exe() else { return false };
-    let (file, params) = (HSTRING::from(exe.as_os_str()), HSTRING::from(args));
-    let mut info = SHELLEXECUTEINFOW {
-        cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
-        fMask: SEE_MASK_NOCLOSEPROCESS,
-        lpVerb: w!("runas"),
-        lpFile: PCWSTR(file.as_ptr()),
-        lpParameters: PCWSTR(params.as_ptr()),
-        nShow: 0,
-        ..Default::default()
-    };
-    // SAFETY: `info` and the strings it points at outlive the call; the process handle is closed.
-    unsafe {
-        if ShellExecuteExW(&mut info).is_err() {
-            return false;
-        }
-        WaitForSingleObject(info.hProcess, INFINITE);
-        let _ = CloseHandle(info.hProcess);
-    }
-    true
 }
 
 /// The system file (or folder) picker. Blocking and modal to `owner`; call on the UI thread.

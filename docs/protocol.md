@@ -36,8 +36,9 @@ The first frame from the client must be either `pair` or `hello`. Anything else 
 ### Hello (every later connection)
 ```json
 → {"t":"hello","v":1,"token":"<device token>","device":"Pixel 8"}
-← {"t":"welcome","v":1,"pc":{...PcInfo},"caps":["input","media","clip","files","power","thumb","pad","net"]}
+← {"t":"welcome","v":1,"pc":{...PcInfo},"caps":["input","media","clip","files","power","thumb","pad","net","stream","unlock","fsbrowse"],"locked":false}
 ```
+- `locked`: the PC shows the lock or sign-in screen. Afterwards the host sends `{"t":"lock","locked":bool}` to every connection whenever that changes.
 - Errors: `unauthorized` (unknown token), `revoked` (the device was removed on the PC). The host closes the connection after either one.
 
 ### PcInfo
@@ -96,12 +97,31 @@ The host releases every key and button that is still held when a connection clos
 ← {"t":"file.done","id":"<uuid>","path":"C:\\Users\\…\\Downloads\\PC Remote\\photo.jpg"}
 ```
 - `offset > 0` in `file.ready` means a partial `<name>.part` file with the same id exists, and the phone resumes from there.
-- `name` is reduced to its base name. Characters invalid on Windows are replaced with `_`. A clash adds ` (1)`, ` (2)` and so on. Paths are confined to the received-files folder.
+- `name` may be a relative path (`Trip/day 1/a.jpg`, `/` or `\` separators) to keep a folder's layout. Every component is sanitised: characters invalid on Windows become `_`, reserved names get a `_` prefix, and `.`, `..`, empty parts and drive/UNC prefixes are dropped, so paths are confined to the received-files folder. A clash adds ` (1)`, ` (2)` and so on.
+- `{"t":"file.cancel","id"}` (either direction's id) stops a transfer; the host deletes the partial file.
 - Errors: `file.error{id,code:"too_large|disk_full|bad_hash|denied"}`.
 
 **PC → phone:** the host sends `{"t":"file.offer","id","name","size"}`. The phone replies `{"t":"file.accept","id","offset"}` or `{"t":"file.reject","id"}`. Chunks and `file.end` follow in the same format as above, in the other direction.
 
+**Browsing the PC (cap `fsbrowse`, only while the PC allows files):**
+```json
+→ {"t":"fs.list","path":""}
+← {"t":"fs.list","path":"","entries":[{"name":"Documents","path":"C:\\Users\\Sadik\\Documents","dir":true,"size":0,"mtime":0}, …]}
+→ {"t":"fs.get","path":"C:\\Users\\Sadik\\Pictures\\Trip"}
+← {"t":"file.offer","id","name":"Trip/a.jpg","size"} (one per file, at most 5000)
+```
+- `path: ""` lists the user's folders and the drives. Hidden and system entries are left out; folders come first.
+- Offers from `fs.get` use relative names like the uploads above.
+
 **Binary chunk layout:** `[0x01][16-byte uuid][8-byte offset, big-endian][data ≤ 256 KiB]`.
+
+## Unlock (cap `unlock`)
+```json
+→ {"t":"unlock","secret":"<PIN or password>"}
+← {"t":"unlock.result","ok":true}
+```
+- The host wakes the display, lifts the lock curtain, types the secret (digits as number keys, the rest as Unicode) and presses Enter if still locked. `ok` says whether the PC is unlocked a few seconds later.
+- The phone keeps the secret in a biometric-protected Android Keystore key and sends it only after a fingerprint check. The host never stores or logs it.
 
 ## Power (cap `power`)
 ```json

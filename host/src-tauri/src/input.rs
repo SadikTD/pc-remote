@@ -168,6 +168,9 @@ pub struct SendInputEmitter;
 
 impl Emitter for SendInputEmitter {
     fn emit(&mut self, evs: &[Ev]) {
+        // the lock screen and UAC prompts live on another desktop: inject where the user sees
+        crate::win::desk::follow();
+        crate::win::desk::keep_awake();
         let inputs: Vec<INPUT> = evs.iter().map(to_input).collect();
         // SAFETY: `inputs` is a valid slice of initialised INPUT structs.
         let sent = unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };

@@ -13,6 +13,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Fingerprint
 import androidx.compose.material3.Icon
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.drawscope.withTransform
@@ -276,6 +277,14 @@ fun StreamScreen(pcId: String, onBack: () -> Unit) {
             })
         }
         StreamOverlay(toolbar, actions)
+        // On the lock or sign-in screen: one tap and a fingerprint types the PIN
+        val locked by session.conn.locked.collectAsState()
+        val unlock = com.pcremote.modes.rememberUnlocker(pcId, session::send, session.conn.incoming)
+        val canUnlock = (agent as? com.pcremote.agent.AgentState.Online)?.caps?.contains("unlock") == true
+        androidx.compose.animation.AnimatedVisibility(locked && canUnlock && streaming != null, Modifier.align(Alignment.BottomCenter).padding(bottom = 28.dp)) {
+            com.pcremote.ui.components.PrimaryButton(androidx.compose.ui.res.stringResource(R.string.pcr_unlock_fp), unlock,
+                icon = Icons.Rounded.Fingerprint)
+        }
         if (zoom.isZoomed) ZoomChip(zoom.scale, Modifier.align(Alignment.TopCenter).padding(top = 12.dp), zoom::reset)
         if (toolbar.keyboardOpen && streaming != null) {
             Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(c.surface.copy(alpha = 0.9f))) {

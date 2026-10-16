@@ -1,11 +1,12 @@
-//! Tauri commands for the window, plus their pure helpers.
+//! The window's commands, served by the server over the pipe, plus their pure helpers.
 
+use crate::server::App;
 use crate::store::Config;
-use crate::App;
 use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
 use serde::Serialize;
+use serde_json::Value;
 use std::net::Ipv4Addr;
-use tauri::State;
+use std::sync::Arc;
 
 const NAME_SET: &AsciiSet = &NON_ALPHANUMERIC.remove(b'-').remove(b'.').remove(b'_').remove(b'~');
 pub const PORT: u16 = 47999;
@@ -44,10 +45,10 @@ pub struct DeviceView {
 pub struct StateView {
     name: String,
     devices: Vec<DeviceView>,
+    locked: bool,
 }
 
-#[tauri::command]
-pub async fn get_state(app: State<'_, App>) -> Result<StateView, String> {
+fn state(app: &App) -> StateView {
     let connected = app.agent.connected();
     let devices = app
         .store
@@ -57,7 +58,7 @@ pub async fn get_state(app: State<'_, App>) -> Result<StateView, String> {
         .into_iter()
         .map(|d| DeviceView { connected: connected.contains(&d.id), id: d.id, name: d.name })
         .collect();
-    Ok(StateView { name: crate::win::sys::pc_name(), devices })
+    StateView { name: crate::win::sys::pc_name(), devices, locked: crate::win::desk::is_locked() }
 }
 
 /// A fresh pairing code: the QR (SVG) and the same one-time link as text, for "Copy pairing link".
@@ -67,14 +68,13 @@ pub struct PairCode {
     link: String,
 }
 
-#[tauri::command]
-pub fn new_qr(app: State<'_, App>) -> PairCode {
-    let link = pair_url(&app);
+fn new_qr(app: &App) -> PairCode {
+    let link = pair_url(app);
     let svg = qrcode::QrCode::with_error_correction_level(&link, qrcode::EcLevel::M)
         .map(|q| {
             q.render::<qrcode::render::svg::Color>()
                 .quiet_zone(false)
-                .dark_color(qrcode::render::svg::Color("#0B0D12"))
+                .dark_color(qrcode::render::svg::Color("#07080C"))
                 .light_color(qrcode::render::svg::Color("#FFFFFF"))
                 .build()
         })
@@ -88,50 +88,27 @@ pub fn pair_url(app: &App) -> String {
     qr_payload(&crate::win::sys::pc_name(), &rank_ips(crate::win::sys::adapters().0), PORT, &app.fp, &otp)
 }
 
-#[tauri::command]
-pub fn revoke(app: State<'_, App>, id: String) {
-    app.agent.revoke(&id);
-}
-
-#[tauri::command]
-pub fn rename(app: State<'_, App>, id: String, name: String) -> Result<(), String> {
-    let name: String = name.trim().chars().take(40).collect();
-    if name.is_empty() {
-        return Err("empty name".into());
-    }
-    app.store.lock().unwrap().rename(&id, &name).map_err(|e| e.to_string())
-}
-
 #[derive(Serialize)]
 pub struct ConfigView {
     config: Config,
     displays: Vec<crate::engine::capture::Display>,
 }
 
-#[tauri::command]
-pub fn get_config(app: State<'_, App>) -> ConfigView {
-    ConfigView { config: app.store.lock().unwrap().config().clone(), displays: crate::engine::capture::displays() }
+fn get_config(app: &App) -> ConfigView {
+    let store = app.store.lock().unwrap();
+    let mut config = store.config().clone();
+    config.files_dir = store.files_dir().to_string_lossy().into_owned();
+    ConfigView { config, displays: crate::engine::capture::displays() }
 }
 
-#[tauri::command]
-pub async fn set_config(app: State<'_, App>, config: Config) -> Result<(), String> {
+async fn set_config(app: &App, config: Config) -> Result<(), String> {
     let old = app.store.lock().unwrap().config().clone();
     app.store.lock().unwrap().set_config(config.clone()).map_err(|e| e.to_string())?;
-    if old.autostart != config.autostart {
-        crate::win::sys::set_autostart(config.autostart).map_err(|e| e.to_string())?;
-    }
     if old.anywhere != config.anywhere {
         let st = crate::net::apply_now(config.anywhere).await;
         *app.net.lock().unwrap() = st;
     }
     Ok(())
-}
-
-#[tauri::command]
-pub fn open_files_dir(app: State<'_, App>) -> Result<(), String> {
-    let dir = app.store.lock().unwrap().config().files_dir.clone();
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    std::process::Command::new("explorer.exe").arg(&dir).spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 
 /// Offers `path` to `device`, or to every connected phone; returns how many got the offer.
@@ -141,29 +118,11 @@ pub fn offer_to(app: &App, device: Option<&str>, path: &std::path::Path) -> Resu
     devices.dedup(); // one offer per phone, even with two sessions open
     let mut sent = 0;
     for d in devices {
-        let m = crate::files::offer(&app.outgoing, path).map_err(|e| e.to_string())?;
-        sent += app.agent.send(&d, m).min(1);
+        for m in crate::files::offer_tree(&app.outgoing, path).map_err(|e| e.to_string())? {
+            sent += app.agent.send(&d, m).min(1);
+        }
     }
     Ok(sent)
-}
-
-/// "Send file" on a connected phone: system file picker, then `file.offer`.
-#[tauri::command]
-pub fn send_file(app: State<'_, App>, window: tauri::WebviewWindow, device: String) -> Result<bool, String> {
-    let Some(path) = crate::win::sys::pick(window.hwnd().ok(), false) else { return Ok(false) };
-    offer_to(&app, Some(&device), &path).map(|n| n > 0)
-}
-
-/// Settings → Received files → Change.
-#[tauri::command]
-pub fn pick_files_dir(app: State<'_, App>, window: tauri::WebviewWindow) -> Result<Option<String>, String> {
-    let Some(dir) = crate::win::sys::pick(window.hwnd().ok(), true) else { return Ok(None) };
-    let dir = dir.to_string_lossy().into_owned();
-    let mut store = app.store.lock().unwrap();
-    let mut cfg = store.config().clone();
-    cfg.files_dir = dir.clone();
-    store.set_config(cfg).map_err(|e| e.to_string())?;
-    Ok(Some(dir))
 }
 
 #[derive(Serialize)]
@@ -171,21 +130,6 @@ pub struct NetView {
     #[serde(flatten)]
     status: crate::net::NetStatus,
     lan: Vec<String>,
-}
-
-/// Access-from-anywhere status for Settings.
-#[tauri::command]
-pub fn get_net(app: State<'_, App>) -> NetView {
-    NetView { status: app.net.lock().unwrap().clone(), lan: rank_ips(crate::win::sys::adapters().0) }
-}
-
-/// Opens the project's GitHub releases page in the default browser.
-#[tauri::command]
-pub fn open_release(url: String) -> Result<(), String> {
-    if !url.starts_with("https://github.com/SadikTD/") {
-        return Err("refused".into());
-    }
-    std::process::Command::new("explorer.exe").arg(url).spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 
 #[derive(Serialize)]
@@ -196,23 +140,63 @@ pub struct UpdateView {
     url: String,
 }
 
-#[tauri::command]
-pub async fn check_update() -> Result<UpdateView, String> {
+async fn check_update() -> Result<UpdateView, String> {
     let current = env!("CARGO_PKG_VERSION").to_string();
-    let v: serde_json::Value = reqwest::Client::new()
-        .get("https://api.github.com/repos/SadikTD/pc-remote/releases/latest")
-        .header("User-Agent", "pc-remote-host")
-        .header("Accept", "application/vnd.github+json")
-        .send()
-        .await
-        .and_then(|r| r.error_for_status())
-        .map_err(|e| e.to_string())?
-        .json()
-        .await
-        .map_err(|e| e.to_string())?;
+    let v = crate::update::latest_release().await?;
     let latest = v["tag_name"].as_str().unwrap_or_default().to_string();
     let url = v["html_url"].as_str().unwrap_or("https://github.com/SadikTD/pc-remote/releases").to_string();
     Ok(UpdateView { newer: is_newer(&latest, &current), current, latest, url })
+}
+
+fn arg<T: serde::de::DeserializeOwned>(args: &Value, k: &str) -> Result<T, String> {
+    serde_json::from_value(args[k].clone()).map_err(|e| format!("{k}: {e}"))
+}
+
+fn to_value(v: impl Serialize) -> Result<Value, String> {
+    serde_json::to_value(v).map_err(|e| e.to_string())
+}
+
+/// The UI's requests over the pipe (crate::ipc), by command name.
+pub async fn dispatch(app: Arc<App>, cmd: String, args: Value) -> Result<Value, String> {
+    match cmd.as_str() {
+        "get_state" => to_value(state(&app)),
+        "new_qr" => to_value(new_qr(&app)),
+        "revoke" => {
+            app.agent.revoke(&arg::<String>(&args, "id")?);
+            Ok(Value::Null)
+        }
+        "rename" => {
+            let name: String = arg::<String>(&args, "name")?.trim().chars().take(40).collect();
+            if name.is_empty() {
+                return Err("empty name".into());
+            }
+            app.store.lock().unwrap().rename(&arg::<String>(&args, "id")?, &name).map_err(|e| e.to_string())?;
+            Ok(Value::Null)
+        }
+        "get_config" => to_value(get_config(&app)),
+        "set_config" => to_value(set_config(&app, arg(&args, "config")?).await?),
+        "set_files_dir" => {
+            let dir: String = arg(&args, "dir")?;
+            let mut store = app.store.lock().unwrap();
+            let mut cfg = store.config().clone();
+            cfg.files_dir = dir;
+            store.set_config(cfg).map_err(|e| e.to_string())?;
+            Ok(Value::Null)
+        }
+        "files_dir" => {
+            let dir = app.store.lock().unwrap().files_dir();
+            let _ = std::fs::create_dir_all(&dir);
+            to_value(dir)
+        }
+        "offer" => {
+            let device: Option<String> = arg(&args, "device").ok().flatten();
+            let path: String = arg(&args, "path")?;
+            to_value(offer_to(&app, device.as_deref(), std::path::Path::new(&path))?)
+        }
+        "get_net" => to_value(NetView { status: app.net.lock().unwrap().clone(), lan: rank_ips(crate::win::sys::adapters().0) }),
+        "check_update" => to_value(check_update().await?),
+        _ => Err(format!("unknown command {cmd}")),
+    }
 }
 
 #[cfg(test)]

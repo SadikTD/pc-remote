@@ -24,8 +24,13 @@ import com.pcremote.agent.FailReason
 import com.pcremote.agent.Msg
 import com.pcremote.agent.PairedPc
 import com.pcremote.agent.PcStore
+import androidx.compose.material.icons.rounded.Fingerprint
+import androidx.compose.material.icons.rounded.Lock
+import com.pcremote.ui.components.Aurora
 import com.pcremote.ui.components.GhostButton
+import com.pcremote.ui.components.GlassIconButton
 import com.pcremote.ui.components.StatusDot
+import com.pcremote.ui.components.glass
 import com.pcremote.ui.theme.LocalMidnight
 import com.pcremote.ui.theme.MidnightShapes
 import kotlinx.coroutines.launch
@@ -38,15 +43,15 @@ class AgentSession(val pc: PairedPc, val conn: AgentConnection) {
 
 /** Opens an agent connection for [pcId] while the calling screen is on screen. */
 @Composable
-fun rememberAgentSession(pcId: String, acceptsFiles: Boolean = false): AgentSession? {
+fun rememberAgentSession(pcId: String): AgentSession? {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val pc = remember(pcId) { PcStore.get(ctx).all().firstOrNull { it.id == pcId } } ?: return null
     val session = remember(pcId) { AgentSession(pc, AgentConnection.forPc(pc, scope)) }
     DisposableEffect(session) {
         scope.launch { session.conn.hello(pc.token, Build.MODEL) }
-        // Only the Files screen takes files; elsewhere a PC→phone offer gets a clear "no"
-        if (!acceptsFiles) scope.launch { session.conn.incoming.collect { if (it is Msg.FileOffer) session.conn.send(Msg.FileReject(it.id)) } }
+        // PC → phone files are received in the background, whichever screen is open
+        scope.launch { session.conn.incoming.collect { if (it is Msg.FileOffer) com.pcremote.modes.TransferHub.get(ctx, pcId).offer(it) } }
         onDispose { session.conn.close() }
     }
     return session
@@ -62,7 +67,7 @@ fun KeepScreenOn() {
     }
 }
 
-/** Shared chrome for every mode: back, PC name, live status, power, and a connection banner. */
+/** Shared chrome for every mode: back, PC name, live status, power, unlock, and a connection banner. */
 @Composable
 fun ModeScaffold(
     title: Int,
@@ -74,51 +79,69 @@ fun ModeScaffold(
     val c = LocalMidnight.current
     val scope = rememberCoroutineScope()
     val state by (session?.conn?.state ?: remember { kotlinx.coroutines.flow.MutableStateFlow(AgentState.Closed) }).collectAsState()
+    val locked by (session?.conn?.locked ?: remember { kotlinx.coroutines.flow.MutableStateFlow(false) }).collectAsState()
+    val unlock = rememberUnlocker(session?.pc?.id.orEmpty(), { m -> session?.send(m) == true }, session?.conn?.incoming)
     BackHandler(onBack = onBack)
     KeepScreenOn()
-    Column(Modifier.fillMaxSize().background(c.bg).safeDrawingPadding()) {
-        Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, null, tint = c.text) }
-            Column(Modifier.weight(1f)) {
-                Text(stringResource(title), color = c.text, style = MaterialTheme.typography.titleLarge)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    val online = state is AgentState.Online
-                    StatusDot(if (online) c.ok else if (state is AgentState.Failed) c.bad else c.warn, live = online, size = 7.dp)
-                    Text(session?.pc?.name ?: "", color = c.textDim, style = MaterialTheme.typography.bodySmall,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+    Box(Modifier.fillMaxSize().background(c.bg)) {
+        Aurora(intensity = 0.45f)
+        Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+            Row(Modifier.fillMaxWidth().padding(16.dp, 10.dp, 16.dp, 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                GlassIconButton(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.pcr_back), onBack)
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(title), color = c.text, style = MaterialTheme.typography.titleLarge)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        val online = state is AgentState.Online
+                        StatusDot(if (locked && online) c.warn else if (online) c.ok else if (state is AgentState.Failed) c.bad else c.warn, live = online, size = 6.dp)
+                        Text(session?.pc?.name ?: "", color = c.textDim, style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                var power by remember { mutableStateOf(false) }
+                if (power && session != null) PowerSheet(session.pc.name, { session.send(it) }) { power = false }
+                if (showPower && state is AgentState.Online && "power" in (state as AgentState.Online).caps) {
+                    GlassIconButton(Icons.Rounded.PowerSettingsNew, stringResource(R.string.pcr_power), { power = true })
                 }
             }
-            var power by remember { mutableStateOf(false) }
-            if (power && session != null) PowerSheet(session.pc.name, { session.send(it) }) { power = false }
-            if (showPower && state is AgentState.Online && "power" in (state as AgentState.Online).caps) IconButton({ power = true }) { Icon(Icons.Rounded.PowerSettingsNew, stringResource(R.string.pcr_power), tint = c.text) }
-        }
-        AnimatedVisibility(state !is AgentState.Online) {
-            val msg = when ((state as? AgentState.Failed)?.reason) {
-                null -> R.string.pcr_conn_connecting
-                FailReason.REVOKED, FailReason.UNAUTHORIZED -> R.string.pcr_conn_revoked
-                FailReason.CERT_MISMATCH -> R.string.pcr_cert_mismatch
-                else -> R.string.pcr_conn_unreachable
-            }
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).background(c.surfaceHigh, MidnightShapes.control)
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(stringResource(msg), color = c.text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                if (state is AgentState.Failed && session != null) {
-                    GhostButton(stringResource(R.string.pcr_retry), {
-                        scope.launch { session.conn.hello(session.pc.token, Build.MODEL) }
-                    })
+            val online = state as? AgentState.Online
+            AnimatedVisibility(online != null && locked && "unlock" in online.caps) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).glass(MidnightShapes.control).padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Lock, null, tint = c.warn, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Text(stringResource(R.string.pcr_status_locked), color = c.text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    GhostButton(stringResource(R.string.pcr_unlock), unlock, icon = Icons.Rounded.Fingerprint)
                 }
             }
-        }
-        if (session == null) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(stringResource(R.string.pcr_conn_unknown_pc), color = c.textDim)
+            AnimatedVisibility(state !is AgentState.Online) {
+                val msg = when ((state as? AgentState.Failed)?.reason) {
+                    null -> R.string.pcr_conn_connecting
+                    FailReason.REVOKED, FailReason.UNAUTHORIZED -> R.string.pcr_conn_revoked
+                    FailReason.CERT_MISMATCH -> R.string.pcr_cert_mismatch
+                    else -> R.string.pcr_conn_unreachable
+                }
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).glass(MidnightShapes.control)
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(stringResource(msg), color = c.text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    if (state is AgentState.Failed && session != null) {
+                        GhostButton(stringResource(R.string.pcr_retry), {
+                            scope.launch { session.conn.hello(session.pc.token, Build.MODEL) }
+                        })
+                    }
+                }
             }
-        } else {
-            ClipboardSync(session, state)
-            content(state)
+            if (session == null) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(stringResource(R.string.pcr_conn_unknown_pc), color = c.textDim)
+                }
+            } else {
+                ClipboardSync(session, state)
+                content(state)
+            }
         }
     }
 }

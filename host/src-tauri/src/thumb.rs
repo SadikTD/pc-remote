@@ -53,6 +53,7 @@ fn is_black(bgra: &[u8]) -> bool {
 /// One BGRA frame of the primary display via DXGI Desktop Duplication. Every resource
 /// is created for this call and released after it, so nothing is held between thumbnails.
 fn capture() -> Option<(Vec<u8>, u32, u32, usize)> {
+    crate::win::desk::follow();
     // SAFETY: COM/D3D calls with valid out-params; the mapped staging texture is only read
     // between Map and Unmap.
     unsafe {

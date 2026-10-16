@@ -7,6 +7,7 @@ import java.nio.ByteBuffer
 import java.security.MessageDigest
 import java.util.UUID
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 
 /** Binary file chunk frames: `[0x01][16-byte uuid][8-byte offset BE][data]` (docs/protocol.md). */
 object FileFraming {
@@ -53,6 +54,7 @@ class FileSender(
         var pos = 0L
         open().use { input ->
             while (true) {
+                kotlinx.coroutines.currentCoroutineContext().ensureActive() // pause / cancel
                 val n = input.read(buf)
                 if (n <= 0) break
                 md.update(buf, 0, n)

@@ -1,9 +1,10 @@
-//! DPAPI (user scope) for secrets at rest.
+//! DPAPI for secrets at rest. New blobs are machine scope (the SYSTEM server reads them; the
+//! data folder's ACL keeps other users out); `unprotect` reads either scope.
 
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::{LocalFree, HLOCAL};
 use windows::Win32::Security::Cryptography::{
-    CryptProtectData, CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
+    CryptProtectData, CryptUnprotectData, CRYPTPROTECT_LOCAL_MACHINE, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
 };
 
 fn blob(b: &[u8]) -> CRYPT_INTEGER_BLOB {
@@ -22,7 +23,7 @@ fn take(out: CRYPT_INTEGER_BLOB) -> Vec<u8> {
 pub fn protect(data: &[u8]) -> windows::core::Result<Vec<u8>> {
     let mut out = CRYPT_INTEGER_BLOB::default();
     // SAFETY: input blob borrows `data` for the call; output is owned by `take`.
-    unsafe { CryptProtectData(&blob(data), PCWSTR::null(), None, None, None, CRYPTPROTECT_UI_FORBIDDEN, &mut out)? };
+    unsafe { CryptProtectData(&blob(data), PCWSTR::null(), None, None, None, CRYPTPROTECT_UI_FORBIDDEN | CRYPTPROTECT_LOCAL_MACHINE, &mut out)? };
     Ok(take(out))
 }
 

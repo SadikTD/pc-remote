@@ -4,6 +4,11 @@ use tauri::Manager;
 use tauri_plugin_notification::NotificationExt;
 
 fn main() {
+    match std::env::args().nth(1).as_deref() {
+        Some("--service") => return pc_remote_host::service::run(),
+        Some("--server") => return pc_remote_host::server::run(),
+        _ => {}
+    }
     pc_remote_host::run_with(|b| {
         b.plugin(tauri_plugin_notification::init()).setup(|app| {
             let handle = app.app_handle().clone();

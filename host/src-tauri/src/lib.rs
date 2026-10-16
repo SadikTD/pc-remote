@@ -5,6 +5,7 @@ pub mod engine;
 pub mod files;
 pub mod host;
 pub mod input;
+pub mod ipc;
 pub mod log;
 pub mod mdns;
 pub mod media;
@@ -15,33 +16,29 @@ pub mod power;
 pub mod proto;
 pub mod prs;
 pub mod remote;
+pub mod server;
+pub mod service;
 pub mod store;
 pub mod thumb;
 pub mod tls;
+pub mod unlock;
+pub mod update;
 pub mod win;
 
-use agent::{AgentHandle, Event};
+use serde_json::{json, Value};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
-use store::Store;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter as _, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 
-/// Shared state for the Tauri commands.
-pub struct App {
-    pub store: Arc<Mutex<Store>>,
-    pub agent: AgentHandle,
-    pub fp: String,
-    pub outgoing: files::Outgoing,
-    pub net: Arc<Mutex<net::NetStatus>>,
-    /// LAN discovery, withdrawn when the app quits.
-    pub mdns: Mutex<Option<mdns::Advert>>,
+/// `C:\ProgramData\PC Remote`: the server's store, TLS identity and log (SYSTEM + Administrators only).
+pub fn data_dir() -> PathBuf {
+    PathBuf::from(std::env::var("PROGRAMDATA").unwrap_or_else(|_| r"C:\ProgramData".into())).join("PC Remote")
 }
 
-pub fn data_dir() -> PathBuf {
-    PathBuf::from(std::env::var("APPDATA").unwrap_or_else(|_| ".".into())).join("PC Remote")
+/// The tray process's link to the server.
+struct Ui {
+    pipe: ipc::Client,
 }
 
 /// Shows the main window, creating its webview if it was destroyed on close.
@@ -54,7 +51,7 @@ pub fn show_window(app: &AppHandle) {
     }
     let built = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
         .title("PC Remote")
-        .inner_size(420.0, 640.0)
+        .inner_size(440.0, 680.0)
         .resizable(false)
         .maximizable(false)
         .decorations(false)
@@ -66,91 +63,81 @@ pub fn show_window(app: &AppHandle) {
     }
 }
 
-fn send_arg(argv: &[String]) -> Option<PathBuf> {
+fn send_arg(argv: &[String]) -> Option<String> {
     let i = argv.iter().position(|a| a == "--send")?;
-    argv.get(i + 1).map(PathBuf::from)
+    argv.get(i + 1).cloned()
 }
 
+fn pipe(app: &AppHandle) -> ipc::Client {
+    app.state::<Ui>().pipe.clone()
+}
+
+/// Every window command the server answers (crate::commands::dispatch).
+#[tauri::command]
+async fn call(app: AppHandle, cmd: String, args: Option<Value>) -> Result<Value, String> {
+    pipe(&app).call(&cmd, args.unwrap_or(Value::Null)).await
+}
+
+/// "Send file" on a connected phone: the file picker runs here, as the user; the server sends it.
+#[tauri::command]
+fn send_file(app: AppHandle, window: tauri::WebviewWindow, device: String, folder: Option<bool>) -> Result<bool, String> {
+    let Some(path) = win::sys::pick(window.hwnd().ok(), folder.unwrap_or(false)) else { return Ok(false) };
+    let n = tauri::async_runtime::block_on(pipe(&app).call("offer", json!({"device": device, "path": path})))?;
+    Ok(n.as_u64().unwrap_or(0) > 0)
+}
+
+/// Settings → Received files → Change.
+#[tauri::command]
+fn pick_files_dir(app: AppHandle, window: tauri::WebviewWindow) -> Result<Option<String>, String> {
+    let Some(dir) = win::sys::pick(window.hwnd().ok(), true) else { return Ok(None) };
+    let dir = dir.to_string_lossy().into_owned();
+    tauri::async_runtime::block_on(pipe(&app).call("set_files_dir", json!({"dir": dir})))?;
+    Ok(Some(dir))
+}
+
+#[tauri::command]
+async fn open_files_dir(app: AppHandle) -> Result<(), String> {
+    let dir = pipe(&app).call("files_dir", Value::Null).await?;
+    let dir = dir.as_str().ok_or("no folder")?;
+    std::process::Command::new("explorer.exe").arg(dir).spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// Opens the project's GitHub releases page in the default browser.
+#[tauri::command]
+fn open_release(url: String) -> Result<(), String> {
+    if !url.starts_with("https://github.com/SadikTD/") {
+        return Err("refused".into());
+    }
+    std::process::Command::new("explorer.exe").arg(url).spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// The tray and window, as the signed-in user. Without the service running, the window says so.
 pub fn run() {
     run_with(|b| b)
 }
 
 /// Like [run], letting the binary add plugins the library (and its tests) shouldn't link.
 pub fn run_with(extra: impl FnOnce(tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry>) {
-    let dir = data_dir();
-    // reqwest (update check, TURN credentials) uses rustls with no built-in provider: install ring once
-    let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
     let hidden = std::env::args().any(|a| a == "--hidden");
-    if win::elevate::hand_off() {
-        return; // the elevated copy took over this launch's arguments
-    }
-    let elevated = win::elevate::is_elevated();
-    if elevated {
-        win::elevate::accept_handoff();
-    }
     extra(tauri::Builder::default())
         .plugin(tauri_plugin_single_instance::init(move |app, argv, _| {
-            // Explorer "Send to phone" starts a second instance with --send <path>.
             if argv.iter().any(|a| a == "--hidden") {
-                return; // autostart handed over to an already-running copy
-            }
-            if argv.iter().any(|a| a == "--pair-url") {
-                // elevated, any normal process can reach this callback: don't hand it a pairing link
-                if elevated {
-                    return;
-                }
-                // `pc-remote-host --pair-url` writes a fresh pairing link (for pairing without a camera)
-                let _ = std::fs::write(data_dir().join("pair-url.txt"), commands::pair_url(&app.state::<App>()));
-                return;
+                return; // the sign-in start found the tray already running
             }
             match send_arg(&argv) {
+                // Explorer "Send to phone" starts a second instance with --send <path>
                 Some(path) => {
-                    let _ = commands::offer_to(&app.state::<App>(), None, &path);
+                    let p = pipe(app);
+                    tauri::async_runtime::spawn(async move { p.call("offer", json!({"path": path})).await });
                 }
                 None => show_window(app),
             }
         }))
-        .invoke_handler(tauri::generate_handler![
-            commands::get_state,
-            commands::new_qr,
-            commands::revoke,
-            commands::rename,
-            commands::get_config,
-            commands::set_config,
-            commands::open_files_dir,
-            commands::check_update,
-            commands::open_release,
-            commands::send_file,
-            commands::pick_files_dir,
-            commands::get_net,
-        ])
+        .invoke_handler(tauri::generate_handler![call, send_file, pick_files_dir, open_files_dir, open_release])
         .setup(move |app| {
-            let identity = tls::Identity::load_or_create(&dir)?;
-            let store = Arc::new(Mutex::new(Store::open(&dir)?));
-            let host = Arc::new(host::Host::new(store.clone()));
-            let (outgoing, net) = (host.outgoing.clone(), host.net.clone());
-            if store.lock().unwrap().config().anywhere {
-                let net = net.clone();
-                tauri::async_runtime::spawn(async move { *net.lock().unwrap() = net::apply_now(true).await });
-            }
             let _ = win::sys::register_send_verb();
-            let agent = tauri::async_runtime::block_on(agent::Agent::start(
-                &identity,
-                store.clone(),
-                host,
-                "0.0.0.0:47999".parse().unwrap(),
-                Duration::from_secs(30),
-            ))?;
-            if let Some(url) = remote::url() {
-                tauri::async_runtime::spawn(remote::rendezvous::run(agent.clone(), store.clone(), url.into()));
-            }
-            let mut events = agent.events();
-            let advert = mdns::Advert::start(store.lock().unwrap().pc_id(), &win::sys::pc_name());
-            let mdns = Mutex::new(advert);
-            app.manage(App { store, agent: agent.clone(), fp: identity.fingerprint_hex.clone(), outgoing, net, mdns });
-
-            let open = MenuItem::with_id(app, "open", "Open", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let open = MenuItem::with_id(app, "open", "Open PC Remote", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "Hide from tray", true, None::<&str>)?;
             let tray = TrayIconBuilder::with_id("tray")
                 .icon(app.default_window_icon().cloned().expect("icon"))
                 .tooltip("PC Remote")
@@ -168,17 +155,30 @@ pub fn run_with(extra: impl FnOnce(tauri::Builder<tauri::Wry>) -> tauri::Builder
                 })
                 .build(app)?;
 
-            // Agent events → tray tooltip and the window (if open). No polling.
+            // Server events → tray tooltip, toasts and the window (if open). No polling.
             let handle = app.handle().clone();
+            let (etx, mut erx) = tokio::sync::mpsc::unbounded_channel::<Value>();
+            let client = ipc::Client::start(ipc::PIPE, move |v| {
+                let _ = etx.send(v);
+            });
+            app.manage(Ui { pipe: client.clone() });
             tauri::async_runtime::spawn(async move {
-                while let Ok(e) = events.recv().await {
-                    let tip = match agent.connected().len() {
-                        0 => "PC Remote".to_string(),
-                        1 => "PC Remote · 1 phone connected".to_string(),
-                        n => format!("PC Remote · {n} phones connected"),
-                    };
-                    let _ = tray.set_tooltip(Some(tip));
-                    let _ = handle.emit(if matches!(e, Event::Paired { .. }) { "paired" } else { "devices" }, ());
+                while let Some(v) = erx.recv().await {
+                    let ev = v["ev"].as_str().unwrap_or_default().to_string();
+                    if ev == "toast" {
+                        notify::show(v["title"].as_str().unwrap_or_default(), v["body"].as_str().unwrap_or_default());
+                        continue;
+                    }
+                    if let Ok(s) = client.call("get_state", Value::Null).await {
+                        let n = s["devices"].as_array().map_or(0, |d| d.iter().filter(|d| d["connected"] == true).count());
+                        let tip = match n {
+                            0 => "PC Remote".to_string(),
+                            1 => "PC Remote · 1 phone connected".to_string(),
+                            n => format!("PC Remote · {n} phones connected"),
+                        };
+                        let _ = tray.set_tooltip(Some(tip));
+                    }
+                    let _ = handle.emit(&ev, v.clone());
                 }
             });
             if !hidden {
@@ -188,10 +188,10 @@ pub fn run_with(extra: impl FnOnce(tauri::Builder<tauri::Wry>) -> tauri::Builder
         })
         .build(tauri::generate_context!())
         .expect("tauri app")
-        .run(|app, e| match e {
+        .run(|_, e| {
             // Closing the window destroys the webview; the tray process lives on.
-            RunEvent::ExitRequested { code: None, api, .. } => api.prevent_exit(),
-            RunEvent::Exit => drop(app.state::<App>().mdns.lock().unwrap().take()),
-            _ => {}
+            if let RunEvent::ExitRequested { code: None, api, .. } = e {
+                api.prevent_exit()
+            }
         });
 }

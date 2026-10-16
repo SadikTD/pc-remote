@@ -64,6 +64,10 @@ pub trait Handlers: Send + Sync + 'static {
     /// Capabilities for `welcome`.
     fn caps(&self) -> Vec<String>;
     fn session(&self, device: &str, out: Outbox) -> Box<dyn Session>;
+    /// For `welcome.locked`.
+    fn locked(&self) -> bool {
+        false
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -127,6 +131,13 @@ impl AgentHandle {
 
     pub fn events(&self) -> broadcast::Receiver<Event> {
         self.ctx.events.subscribe()
+    }
+
+    /// Sends to every open session of every phone.
+    pub fn broadcast(&self, m: ServerMsg) {
+        for (_, tx) in self.ctx.sessions.lock().unwrap().values() {
+            let _ = tx.send(Out::Msg(m.clone()));
+        }
     }
 
     /// Sends to every open session of `device`; returns how many got it.

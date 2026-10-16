@@ -91,6 +91,21 @@ pub enum ClientMsg {
     StreamStop,
     #[serde(rename = "stream.cand")]
     StreamCand { c: String },
+    /// Type the PIN/password on the lock screen (cap `unlock`).
+    #[serde(rename = "unlock")]
+    Unlock { secret: String },
+    /// Stop a transfer and drop its partial file.
+    #[serde(rename = "file.cancel")]
+    FileCancel { id: String },
+    /// List a folder on the PC ("" = drives and known folders) (cap `fsbrowse`).
+    #[serde(rename = "fs.list")]
+    FsList {
+        #[serde(default)]
+        path: String,
+    },
+    /// Download a file or folder from the PC: answered with `file.offer`s.
+    #[serde(rename = "fs.get")]
+    FsGet { path: String },
 }
 
 /// The phone may send `null` for optional fields; treat it like an absent field.
@@ -143,6 +158,10 @@ impl ClientMsg {
             ClientMsg::StreamDisplay { .. } => "stream.display",
             ClientMsg::StreamStop => "stream.stop",
             ClientMsg::StreamCand { .. } => "stream.cand",
+            ClientMsg::Unlock { .. } => "unlock",
+            ClientMsg::FileCancel { .. } => "file.cancel",
+            ClientMsg::FsList { .. } => "fs.list",
+            ClientMsg::FsGet { .. } => "fs.get",
         }
     }
 }
@@ -162,7 +181,7 @@ pub enum ServerMsg {
     #[serde(rename = "paired")]
     Paired { token: String, pc: PcInfo },
     #[serde(rename = "welcome")]
-    Welcome { v: u32, pc: PcInfo, caps: Vec<String> },
+    Welcome { v: u32, pc: PcInfo, caps: Vec<String>, locked: bool },
     #[serde(rename = "pong")]
     Pong,
     #[serde(rename = "error")]
@@ -209,6 +228,24 @@ pub enum ServerMsg {
     /// How to reach this PC through the rendezvous Worker (docs/remote-protocol.md).
     #[serde(rename = "remote")]
     Remote { url: String, dev: String, ticket: String },
+    #[serde(rename = "unlock.result")]
+    UnlockResult { ok: bool },
+    /// The PC was locked or unlocked (also sent when the sign-in screen shows).
+    #[serde(rename = "lock")]
+    Lock { locked: bool },
+    #[serde(rename = "fs.list")]
+    FsList { path: String, entries: Vec<FsEntry> },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct FsEntry {
+    pub name: String,
+    /// Full path to pass back in `fs.list` / `fs.get`.
+    pub path: String,
+    pub dir: bool,
+    pub size: u64,
+    /// Unix seconds.
+    pub mtime: u64,
 }
 
 impl ServerMsg {
@@ -323,7 +360,7 @@ mod tests {
             json!({"t":"paired","token":"t","pc":{"id":"id","name":"DESKTOP-ABC","user":"Sadik","macs":["AA:BB:CC:DD:EE:FF"],"os":"Windows 11 Pro 26300"}})
         );
         assert_eq!(
-            s(&ServerMsg::Welcome { v: 1, pc, caps: vec!["input".into()] })["caps"],
+            s(&ServerMsg::Welcome { v: 1, pc, caps: vec!["input".into()], locked: false })["caps"],
             json!(["input"])
         );
         assert_eq!(s(&ServerMsg::Pong), json!({"t":"pong"}));

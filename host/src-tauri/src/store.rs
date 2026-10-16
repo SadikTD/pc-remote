@@ -35,7 +35,6 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        let home = std::env::var("USERPROFILE").unwrap_or_else(|_| ".".into());
         Config {
             autostart: true,
             display: String::new(),
@@ -43,7 +42,8 @@ impl Default for Config {
             allow_files: true,
             allow_clip: true,
             anywhere: false,
-            files_dir: Path::new(&home).join("Downloads").join("PC Remote").to_string_lossy().into(),
+            // empty: the signed-in user's Downloads\PC Remote (see Store::files_dir)
+            files_dir: String::new(),
         }
     }
 }
@@ -208,6 +208,14 @@ impl Store {
         self.data.devices.iter().filter(|d| d.revoked).map(|d| d.id.clone()).collect()
     }
 
+    /// Where received files go: the configured folder, else the signed-in user's Downloads\PC Remote.
+    pub fn files_dir(&self) -> PathBuf {
+        match self.data.config.files_dir.as_str() {
+            "" => crate::win::session::user_profile().join("Downloads").join("PC Remote"),
+            d => PathBuf::from(d),
+        }
+    }
+
     pub fn config(&self) -> &Config {
         &self.data.config
     }
@@ -321,6 +329,7 @@ mod tests {
         let s = Store::open(&tmp("defaults")).unwrap();
         let c = s.config();
         assert!(c.autostart && c.allow_files && c.allow_clip && !c.anywhere);
-        assert!(c.files_dir.ends_with("PC Remote"));
+        assert!(c.files_dir.is_empty());
+        assert!(s.files_dir().ends_with(std::path::Path::new("Downloads").join("PC Remote")));
     }
 }

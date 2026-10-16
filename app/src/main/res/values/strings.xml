@@ -121,7 +121,7 @@
     <string name="pcr_pad_racing">Racing</string>
     <string name="pcr_pad_shooter">Shooter</string>
     <string name="pcr_pad_minimal">Minimal</string>
-    <string name="pcr_files_send">Send files to your PC</string>
+    <string name="pcr_files_send">Move files to your PC</string>
     <string name="pcr_files_send_desc">Photos, videos, documents. They land in your PC\'s Downloads › PC Remote folder.</string>
     <string name="pcr_files_recent">Transfers</string>
     <string name="pcr_files_sent">Sent</string>
@@ -158,4 +158,70 @@
     <string name="pcr_manual_desc">On your PC, open PC Remote and choose Copy pairing link, send it to this phone, then paste it here.</string>
     <string name="pcr_wol_sent">Waking your PC…</string>
     <string name="pcr_wol_no_mac">This PC can\'t be woken remotely yet. Open PC Remote on it once while it\'s on.</string>
+    <!-- v3 -->
+    <string name="pcr_app_name">PC Remote</string>
+    <string name="pcr_back">Back</string>
+    <string name="pcr_more">More</string>
+    <string name="pcr_saved">Saved</string>
+    <string name="pcr_forget">Forget</string>
+    <string name="pcr_open_screen">Open screen</string>
+    <string name="pcr_status_locked">Locked</string>
+    <string name="pcr_hint_screen">See and control it</string>
+    <string name="pcr_hint_remote">Touchpad and keyboard</string>
+    <string name="pcr_hint_media">Play, skip, volume</string>
+    <string name="pcr_hint_slides">Present from your phone</string>
+    <string name="pcr_hint_pad">Play with your phone</string>
+    <string name="pcr_hint_files">Send and browse</string>
+    <string name="pcr_wol_sent_ha">Waking your PC through Home Assistant…</string>
+    <string name="pcr_wol_failed">Couldn\'t reach Home Assistant. Check its address and token in Settings.</string>
+
+    <string name="pcr_unlock">Unlock</string>
+    <string name="pcr_unlock_fp">Unlock with fingerprint</string>
+    <string name="pcr_unlock_prompt">Unlock your PC</string>
+    <string name="pcr_unlock_done">PC unlocked</string>
+    <string name="pcr_unlock_failed">The PC is still locked. Check the PIN in Settings › Fingerprint unlock.</string>
+    <string name="pcr_unlock_setup_title">Your Windows PIN</string>
+    <string name="pcr_unlock_setup_body">Enter the PIN or password you use to sign in to this PC. It stays on this phone, locked behind your fingerprint.</string>
+    <string name="pcr_unlock_setup_body_nofp">Enter the PIN or password you use to sign in to this PC. This phone has no fingerprint set up, so it isn\'t saved.</string>
+    <string name="pcr_unlock_pin">PIN or password</string>
+    <string name="pcr_set_unlock">Fingerprint unlock</string>
+    <string name="pcr_unlock_settings_desc">When a PC is locked, tap Unlock and touch the sensor. PINs saved here are only readable after a fingerprint check.</string>
+    <string name="pcr_unlock_settings_nofp">Set up a fingerprint in Android settings to save PINs. Without one, you type the PIN each time.</string>
+    <string name="pcr_unlock_saved_for">PIN saved</string>
+
+    <string name="pcr_set_wake">Wake from anywhere</string>
+    <string name="pcr_ha_desc">A PC that\'s shut down can only be woken from its own network. Home Assistant is there all the time, so the Wake button asks it to send the wake signal. Add wake_on_lan: to its configuration.yaml, then create a long-lived token under Profile › Security.</string>
+    <string name="pcr_ha_url">Home Assistant address</string>
+    <string name="pcr_ha_token">Long-lived access token</string>
+
+    <string name="pcr_update_check">Check for updates</string>
+    <string name="pcr_update_check_desc">Updates install by themselves every few hours</string>
+    <string name="pcr_update_channel">App updates</string>
+    <string name="pcr_update_title">PC Remote update</string>
+    <string name="pcr_update_allow">Version %1$s is ready. Tap to let PC Remote install its own updates.</string>
+    <string name="pcr_update_tap">Tap to finish installing the update.</string>
+
+    <string name="pcr_files_channel">File transfers</string>
+    <string name="pcr_files_preparing">Getting ready…</string>
+    <string name="pcr_files_all_done">All transfers finished</string>
+    <string name="pcr_files_some_failed">Some transfers didn\'t finish. Open Files to retry.</string>
+    <plurals name="pcr_files_moving">
+        <item quantity="one">Moving 1 file</item>
+        <item quantity="other">Moving %d files</item>
+    </plurals>
+    <string name="pcr_files_tab_transfers">Transfers</string>
+    <string name="pcr_files_tab_browse">Browse PC</string>
+    <string name="pcr_files_pick">Choose files</string>
+    <string name="pcr_files_pick_folder">Folder</string>
+    <string name="pcr_files_clear">Clear finished</string>
+    <string name="pcr_files_pause">Pause</string>
+    <string name="pcr_files_resume">Resume</string>
+    <string name="pcr_files_left">%1$s left</string>
+    <string name="pcr_files_waiting">Waiting</string>
+    <string name="pcr_files_paused">Paused</string>
+    <string name="pcr_files_up">Up one folder</string>
+    <string name="pcr_files_this_pc">This PC</string>
+    <string name="pcr_files_browse_failed">Couldn\'t open this folder. It may be protected, or the PC went offline.</string>
+    <string name="pcr_files_empty">This folder is empty.</string>
+    <string name="pcr_files_download">Download</string>
 </resources>
