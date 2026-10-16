@@ -139,7 +139,6 @@ impl Handlers for Fake {
 struct Rig {
     handle: AgentHandle,
     store: Arc<StdMutex<Store>>,
-    fake: Arc<Fake>,
     fp: String,
 }
 
@@ -150,8 +149,8 @@ async fn rig(name: &str, idle: Duration) -> Rig {
     let fp = id.fingerprint_hex.clone();
     let store = Arc::new(StdMutex::new(Store::open(&dir).unwrap()));
     let fake = Arc::new(Fake);
-    let handle = Agent::start(&id, store.clone(), fake.clone(), "127.0.0.1:0".parse().unwrap(), idle).await.unwrap();
-    Rig { handle, store, fake, fp }
+    let handle = Agent::start(&id, store.clone(), fake, "127.0.0.1:0".parse().unwrap(), idle).await.unwrap();
+    Rig { handle, store, fp }
 }
 
 async fn hello(r: &Rig, token: &str) -> Ws {

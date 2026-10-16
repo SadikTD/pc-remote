@@ -191,6 +191,9 @@ pub enum ServerMsg {
     StreamError { code: String, msg: String },
     #[serde(rename = "cursor.shape")]
     CursorShape { png: String, hx: i32, hy: i32 },
+    /// The host's TURN relayed address, once it relays too (docs/remote-protocol.md).
+    #[serde(rename = "stream.cand")]
+    StreamCand { c: String },
     #[serde(rename = "net")]
     Net { lan: Vec<String>, public: Option<String>, anywhere: bool, upnp: bool },
     /// How to reach this PC through the rendezvous Worker (docs/remote-protocol.md).

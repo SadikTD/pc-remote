@@ -43,7 +43,10 @@ class PeerSocket(private val stunServer: InetSocketAddress? = null) : Transport 
             val first = buf[0].toInt() and 0xFF
             when {
                 first in 0x40..0x7F && from == turn?.server -> turn?.unwrap(buf, n)?.let { (data, peerAddr) -> offer(data, peerAddr) }
-                first <= 0x03 -> StunMsg.decode(buf, n)?.let { m -> pending.remove(key(m.txid))?.complete(m) }
+                first <= 0x03 -> StunMsg.decode(buf, n)?.let { m ->
+                    val relayed = if (from == turn?.server) turn?.onIndication(m) else null
+                    if (relayed != null) offer(relayed.first, relayed.second) else pending.remove(key(m.txid))?.complete(m)
+                }
                 else -> offer(buf.copyOf(n), from)
             }
         }
@@ -92,8 +95,8 @@ class PeerSocket(private val stunServer: InetSocketAddress? = null) : Transport 
     fun useTurn(server: InetSocketAddress, user: String, pass: String): InetSocketAddress? {
         val t = TurnClient(this, server, user, pass)
         val relayed = t.allocate() ?: return null
+        turn = t // before permitting, so the first relayed packets are recognised
         t.permit(targets)
-        turn = t
         return relayed
     }
 

@@ -9,6 +9,8 @@ pub const NOTCHES: [u32; 4] = [1080, 900, 720, 540];
 const CUT_EVERY: Duration = Duration::from_millis(300);
 const RAISE_AFTER: Duration = Duration::from_secs(2);
 const STEP_DOWN_AFTER: Duration = Duration::from_secs(3);
+/// A notch back up once the link has been clean this long with room above the floor.
+const STEP_UP_AFTER: Duration = Duration::from_secs(4);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Target {
@@ -25,9 +27,14 @@ pub struct Bitrate {
     /// Loss of the last three reports (100 ms each), newest last.
     loss: Vec<u16>,
     min_rtt: u16,
+    /// Smoothed RTT (EWMA, 1/8 per report), ms.
+    srtt: f64,
+    /// Consecutive reports with the smoothed RTT above the congestion line.
+    high_rtt: u8,
     last_cut: Option<Duration>,
     good_since: Option<Duration>,
     floor_since: Option<Duration>,
+    clean_since: Option<Duration>,
 }
 
 impl Bitrate {
@@ -40,9 +47,12 @@ impl Bitrate {
             max_notch,
             loss: Vec::new(),
             min_rtt: u16::MAX,
+            srtt: 0.0,
+            high_rtt: 0,
             last_cut: None,
             good_since: None,
             floor_since: None,
+            clean_since: None,
         }
     }
 
@@ -59,13 +69,18 @@ impl Bitrate {
         let before = self.t;
         if rtt_ms > 0 {
             self.min_rtt = self.min_rtt.min(rtt_ms);
+            self.srtt = if self.srtt == 0.0 { rtt_ms as f64 } else { self.srtt + (rtt_ms as f64 - self.srtt) / 8.0 };
         }
         self.loss.push(loss_permille);
         if self.loss.len() > 3 {
             self.loss.remove(0);
         }
         let avg_loss = self.loss.iter().map(|&l| l as u32).sum::<u32>() / self.loss.len() as u32;
-        let congested = rtt_ms > 0 && self.min_rtt != u16::MAX && rtt_ms > self.min_rtt.saturating_add(30);
+        // Queueing, not jitter: the smoothed RTT stays above the line for 300 ms. The line scales with
+        // the path (a 50 ms relay path jitters more than a 3 ms LAN).
+        let line = self.min_rtt as f64 + 30f64.max(self.min_rtt as f64 / 2.0);
+        self.high_rtt = if self.min_rtt != u16::MAX && self.srtt > line { self.high_rtt.saturating_add(1) } else { 0 };
+        let congested = self.high_rtt >= 3;
         let can_cut = self.last_cut.is_none_or(|t| now.saturating_sub(t) >= CUT_EVERY);
 
         if self.loss.len() == 3 && avg_loss > 20 && can_cut {
@@ -92,6 +107,16 @@ impl Bitrate {
             }
         } else {
             self.floor_since = None;
+            // recovered: clean for a while with at least 3x the floor -> a notch back up
+            if loss_permille < 5 && !congested {
+                let since = *self.clean_since.get_or_insert(now);
+                if self.t.notch > 0 && self.t.kbps >= 3 * self.floor() && now.saturating_sub(since) >= STEP_UP_AFTER {
+                    self.t.notch -= 1;
+                    self.clean_since = Some(now);
+                }
+            } else {
+                self.clean_since = None;
+            }
         }
         (self.t != before).then_some(self.t)
     }
@@ -158,12 +183,49 @@ mod tests {
     }
 
     #[test]
-    fn rtt_trend_is_congestion() {
+    fn sustained_rtt_rise_is_congestion() {
         let mut b = Bitrate::new(20000, 3);
         b.on_report(ms(100), 0, 10);
-        assert_eq!(b.on_report(ms(200), 0, 41).map(|t| t.kbps), Some(17000));
-        assert_eq!(b.on_report(ms(300), 0, 41), None, "at most one cut per 300 ms");
-        assert_eq!(b.on_report(ms(500), 0, 41).map(|t| t.kbps), Some(14450));
+        let mut t = 100;
+        let mut cut_at = None;
+        while cut_at.is_none() && t < 3000 {
+            t += 100;
+            if b.on_report(ms(t), 0, 200).is_some() {
+                cut_at = Some(t);
+            }
+        }
+        assert_eq!(b.target().kbps, 17000);
+        assert!(cut_at.unwrap() >= 400, "needs the smoothed RTT high for 300 ms");
+    }
+
+    #[test]
+    fn mobile_jitter_is_not_congestion() {
+        // a 50 ms relay path with spikes to 110 ms every few reports
+        let mut b = Bitrate::new(20000, 3);
+        for i in 1..=200u64 {
+            let rtt = if i % 4 == 0 { 110 } else { 50 };
+            b.on_report(ms(i * 100), 0, rtt);
+        }
+        assert_eq!(b.target().kbps, 20000);
+        assert_eq!(b.target().notch, 0);
+    }
+
+    #[test]
+    fn resolution_steps_back_up_after_recovery() {
+        let mut b = Bitrate::new(20000, 3);
+        let mut t = 0;
+        while b.target().notch == 0 {
+            t += 100;
+            b.on_report(ms(t), 100, 10);
+        }
+        assert_eq!(b.target().notch, 1);
+        let mut steps = 0;
+        while b.target().notch > 0 && steps < 2000 {
+            t += 100;
+            steps += 1;
+            b.on_report(ms(t), 0, 10);
+        }
+        assert_eq!(b.target().notch, 0, "back to full size once clean");
     }
 
     #[test]

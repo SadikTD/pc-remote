@@ -110,5 +110,6 @@ All integers are big-endian.
 ### Adaptive bitrate (host)
 - Loss above 2% over 300 ms → bitrate × 0.75, and FEC up to 25%.
 - Loss below 0.5% and stable RTT for 2 s → bitrate × 1.08, up to `maxKbps`.
-- RTT trend more than 30 ms above the session minimum → treated as congestion (× 0.85).
+- Smoothed RTT (EWMA, 1/8 per report) above the session minimum by more than max(30 ms, half the minimum), for 3 reports in a row → treated as congestion (× 0.85). Single jitter spikes don't count.
+- Clean for 4 s with at least 3× the floor → one resolution notch back up.
 - Floor 2 Mbps. At the floor for 3 s, the stream steps down one resolution notch (1080 → 900 → 720 → 540) and tells the phone with a new `stream.ready`, keeping the same `session`, `port` and `key`.

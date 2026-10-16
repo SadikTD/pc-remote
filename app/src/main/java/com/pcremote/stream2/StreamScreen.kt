@@ -106,6 +106,7 @@ fun StreamScreen(pcId: String, onBack: () -> Unit) {
     }
     LaunchedEffect(session) {
         session.conn.incoming.collect { m ->
+            if (m is Msg.StreamCand) pipe?.addCandidate(m.c)
             if (m is Msg.CursorShape) runCatching {
                 val b = Base64.decode(m.png, Base64.DEFAULT)
                 cursorShape = Triple(BitmapFactory.decodeByteArray(b, 0, b.size).asImageBitmap(), m.hx, m.hy)

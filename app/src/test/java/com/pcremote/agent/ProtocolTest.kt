@@ -6,7 +6,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ProtocolTest {
-    private val pc = PcInfo("id1", "DESKTOP", "Sadik", listOf("AA:BB:CC:DD:EE:FF"), "Windows 11", true)
+    private val pc = PcInfo("id1", "DESKTOP", "Sadik", listOf("AA:BB:CC:DD:EE:FF"), "Windows 11")
 
     @Test fun `every message round-trips`() {
         val all: List<Msg> = listOf(

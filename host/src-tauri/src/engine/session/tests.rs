@@ -299,7 +299,9 @@ fn loopback_streams_real_frames() {
     );
     assert!(decodable.len() >= 120, "only {} frames", decodable.len());
     assert!(decodable[0].1, "decoding starts at a keyframe");
-    assert!(done.len() as f64 / secs > 40.0, "frame rate through FEC: {:.1} fps", done.len() as f64 / secs);
+    // Desktop Duplication only produces frames when the screen changes, so a still desktop gives
+    // fewer than the display rate: this checks frames keep flowing through FEC, not the PC's activity.
+    assert!(done.len() as f64 / secs > 20.0, "frame rate through FEC: {:.1} fps", done.len() as f64 / secs);
     assert!(p95 < 50_000, "capture→receive p95 {p95} µs");
     drop(session);
 }

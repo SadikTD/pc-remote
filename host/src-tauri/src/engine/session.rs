@@ -8,6 +8,7 @@ use super::encode::{codec_name, codecs_available, parse_codec, Encoder};
 use super::input::Dedup;
 use super::{audio, cursor, now_us, Com};
 use crate::proto::{ClientMsg, ServerMsg};
+use crate::remote::turn::{self, Turn};
 use crate::prs::frame::{packetize, Codec, FrameHeader};
 use crate::prs::{Crypt, Dir, Header, Type};
 use base64::{engine::general_purpose::STANDARD, Engine};
@@ -60,6 +61,10 @@ pub struct Shared {
     punch_until: Mutex<Option<Instant>>,
     punch_every: Duration,
     punch_for: Duration,
+    /// Our own TURN allocation, when NATs need relay-to-relay (docs/remote-protocol.md).
+    turn: Mutex<Option<Arc<Turn>>>,
+    /// Peers whose packets arrived through `turn`: replies go back the same way.
+    via_relay: Mutex<std::collections::HashSet<SocketAddr>>,
 }
 
 fn hdr(typ: Type, frame_id: u32) -> Header {
@@ -80,6 +85,8 @@ impl Shared {
             punch_until: Mutex::default(),
             punch_every: PUNCH_EVERY,
             punch_for: PUNCH_FOR,
+            turn: Mutex::default(),
+            via_relay: Mutex::default(),
         }
     }
 
@@ -116,7 +123,74 @@ impl Shared {
 
     fn send_to(&self, to: SocketAddr, mut h: Header, plain: &[u8]) -> bool {
         h.seq = self.seq.fetch_add(1, Ordering::Relaxed);
-        self.sock.send_to(&self.crypt.seal(Dir::HostToPhone, &h, plain), to).is_ok()
+        let pkt = self.crypt.seal(Dir::HostToPhone, &h, plain);
+        if let (Some(t), SocketAddr::V4(v4)) = (self.turn(), to) {
+            if self.via_relay.lock().unwrap().contains(&to) {
+                return self.sock.send_to(&t.wrap(v4, &pkt), t.server).is_ok();
+            }
+        }
+        self.sock.send_to(&pkt, to).is_ok()
+    }
+
+    fn turn(&self) -> Option<Arc<Turn>> {
+        self.turn.lock().unwrap().clone()
+    }
+
+    /// Punching PROBE to one candidate: direct, and through our relay when we have one.
+    fn punch_one(&self, to: SocketAddr) {
+        self.send_to(to, hdr(Type::Probe, 0), &probe(0));
+        if let (Some(t), SocketAddr::V4(v4)) = (self.turn(), to) {
+            if turn::is_public(&v4) && !self.via_relay.lock().unwrap().contains(&to) {
+                let mut h = hdr(Type::Probe, 0);
+                h.seq = self.seq.fetch_add(1, Ordering::Relaxed);
+                let _ = self.sock.send_to(&t.wrap(v4, &self.crypt.seal(Dir::HostToPhone, &h, &probe(0))), t.server);
+            }
+        }
+    }
+
+    /// Allocates our own relay (blocking, ~100 ms), permits the phone's candidates and keeps the
+    /// allocation alive until the stream stops. Returns the relayed address to tell the phone.
+    pub fn start_turn(self: &Arc<Self>, server: SocketAddr, user: String, pass: String) -> Option<std::net::SocketAddrV4> {
+        if self.turn().is_some() {
+            return None;
+        }
+        let t = Arc::new(Turn::new(server, user, pass));
+        *self.turn.lock().unwrap() = Some(t.clone()); // the receive loop now routes the server's answers to it
+        let Some(relayed) = t.allocate(&self.sock) else {
+            *self.turn.lock().unwrap() = None;
+            crate::log::line("turn: allocation failed");
+            return None;
+        };
+        let v4 = |c: &Vec<SocketAddr>| c.iter().filter_map(|a| if let SocketAddr::V4(v) = a { Some(*v) } else { None }).collect::<Vec<_>>();
+        let cands = self.cands.lock().unwrap().clone();
+        t.permit(&self.sock, &v4(&cands));
+        crate::log::line(&format!("turn: relaying at {relayed}"));
+        let weak = Arc::downgrade(self);
+        std::thread::spawn(move || loop {
+            for _ in 0..240 {
+                std::thread::sleep(Duration::from_secs(1));
+                let Some(sh) = weak.upgrade() else { return };
+                if sh.stopped() {
+                    t.refresh(&sh.sock, 0); // free the allocation now
+                    return;
+                }
+            }
+            let Some(sh) = weak.upgrade() else { return };
+            t.refresh(&sh.sock, 600);
+            let cands = sh.cands.lock().unwrap().clone();
+            t.permit(&sh.sock, &v4(&cands));
+        });
+        self.punch(std::iter::empty());
+        Some(relayed)
+    }
+
+    /// A new phone candidate: punch to it, and permit it on our relay if we have one.
+    pub fn add_cand(self: &Arc<Self>, a: SocketAddr) {
+        self.punch([a]);
+        if let (Some(t), SocketAddr::V4(v4)) = (self.turn(), a) {
+            let sh = self.clone();
+            std::thread::spawn(move || t.permit(&sh.sock, &[v4]));
+        }
     }
 
     /// One frame's packets, spread over at most ~4 ms so a burst doesn't overflow Wi-Fi queues.
@@ -161,8 +235,9 @@ pub fn control(sh: &Shared, input: &mut dyn FnMut(ClientMsg), br: &mut Bitrate, 
         }
         let now = Instant::now();
         if punching && now >= next_punch {
-            for &to in sh.cands.lock().unwrap().iter() {
-                sh.send_to(to, hdr(Type::Probe, 0), &probe(0));
+            let cands = sh.cands.lock().unwrap().clone();
+            for to in cands {
+                sh.punch_one(to);
             }
             next_punch = now + sh.punch_every;
         }
@@ -172,16 +247,34 @@ pub fn control(sh: &Shared, input: &mut dyn FnMut(ClientMsg), br: &mut Bitrate, 
             let _ = sh.sock.set_read_timeout(Some(w));
         }
         // Errors include Windows' WSAECONNRESET after an ICMP "port unreachable": keep going.
-        let Ok((n, from)) = sh.sock.recv_from(&mut buf) else { continue };
-        if crate::remote::stun::is_stun(&buf[..n]) {
+        let Ok((n, mut from)) = sh.sock.recv_from(&mut buf) else { continue };
+        let relayed = match sh.turn() {
+            Some(t) if from == t.server => match t.on_packet(&buf[..n]) {
+                Some((peer, data)) => {
+                    from = SocketAddr::V4(peer);
+                    Some(data)
+                }
+                None => continue, // a TURN answer, delivered to the waiting request
+            },
+            _ => None,
+        };
+        let pkt = relayed.as_deref().unwrap_or(&buf[..n]);
+        if crate::remote::stun::is_stun(pkt) {
             continue; // a late STUN answer
         }
-        let Some((h, p)) = sh.crypt.open(Dir::PhoneToHost, &buf[..n]) else { continue };
+        let Some((h, p)) = sh.crypt.open(Dir::PhoneToHost, pkt) else { continue };
+        if relayed.is_some() && sh.via_relay.lock().unwrap().insert(from) {
+            crate::log::line(&format!("turn: phone {from} reached us through the relay"));
+        }
         last_rx = Instant::now();
         match h.typ {
             Type::Probe if p.len() >= 16 && probe_seq.is_none_or(|s| h.seq > s) => {
                 probe_seq = Some(h.seq);
-                let first = sh.peer.lock().unwrap().replace(from).is_none();
+                let prev = sh.peer.lock().unwrap().replace(from);
+                if prev != Some(from) {
+                    crate::log::line(&format!("stream: phone at {from}{}", if prev.is_some() { " (moved)" } else { "" }));
+                }
+                let first = prev.is_none();
                 if first {
                     sh.idr.store(true, Ordering::Relaxed);
                 }
@@ -441,6 +534,7 @@ impl StreamSession {
         let lan = crate::commands::rank_ips(crate::win::sys::adapters().0);
         let cands = host_cands(&lan, port, p.public, reflexive);
         let ready = ReadyInfo { codec, fps, port, session, key: STANDARD.encode(key), cands };
+        crate::log::line(&format!("stream: ready {codec:?} {}x{} on {port}, host cands {:?}, phone cands {:?}", base.0, base.1, ready.cands, p.cands));
         let _ = ready_tx.send(ready.clone());
         sh.punch(p.cands.iter().copied());
         // step-down notches follow the size actually streamed
@@ -469,7 +563,11 @@ impl StreamSession {
 
     /// A phone candidate from `stream.cand`: punch towards it too, restarting the window.
     pub fn add_cand(&self, a: SocketAddr) {
-        self.sh.punch([a]);
+        self.sh.add_cand(a);
+    }
+
+    pub fn shared(&self) -> Arc<Shared> {
+        self.sh.clone()
     }
 
     pub fn alive(&self) -> bool {

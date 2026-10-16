@@ -214,8 +214,17 @@ impl Session for HostSession {
                 None
             }
             ClientMsg::StreamCand { c } => {
-                if let (Some(s), Ok(a)) = (&self.stream, c.parse()) {
+                if let (Some(s), Ok(a)) = (&self.stream, c.parse::<std::net::SocketAddr>()) {
+                    crate::log::line(&format!("stream: phone candidate {a}"));
                     s.add_cand(a);
+                    // the phone relays: relay too, so both ends talk relay-to-relay (carrier NATs)
+                    let (sh, store, out) = (s.shared(), self.store.clone(), self.out.clone());
+                    std::thread::spawn(move || {
+                        let Some((server, user, pass)) = crate::remote::turn_server(&store) else { return };
+                        if let Some(r) = sh.start_turn(server, user, pass) {
+                            out.send(ServerMsg::StreamCand { c: r.to_string() });
+                        }
+                    });
                 }
                 None
             }

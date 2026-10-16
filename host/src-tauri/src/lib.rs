@@ -78,6 +78,8 @@ pub fn run() {
 /// Like [run], letting the binary add plugins the library (and its tests) shouldn't link.
 pub fn run_with(extra: impl FnOnce(tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry>) {
     let dir = data_dir();
+    // reqwest (update check, TURN credentials) uses rustls with no built-in provider: install ring once
+    let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
     let hidden = std::env::args().any(|a| a == "--hidden");
     extra(tauri::Builder::default())
         .plugin(tauri_plugin_single_instance::init(|app, argv, _| {

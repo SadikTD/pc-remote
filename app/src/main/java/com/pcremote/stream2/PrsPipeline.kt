@@ -44,6 +44,7 @@ class PrsPipeline(
     init {
         val direct = agentHost.takeIf { it != RELAY_HOST }?.let { StunMsg.parseHostPort("$it:${ready.port}") }
         sock.setTargets(listOfNotNull(direct) + ready.cands.mapNotNull(StunMsg::parseHostPort))
+        Log.i(TAG, "host candidates ${ready.cands}, direct $direct")
         val listener = object : ReceiverListener {
             override fun onFrame(f: Frame) = decoder.submit(f)
             override fun onAudio(a: AudioPacket) = audio.play(a)
@@ -64,6 +65,14 @@ class PrsPipeline(
 
     private fun newDecoder(r: Msg.StreamReady) = VideoDecoder(surface, r.codec, r.w, r.h, r.fps, { onDecoderFailed() }, receiver::requestIdr)
         .also { d -> d.onRendered = { receiver.decodeMs = d.decodeMs } }
+
+    /** The host's relayed address (`stream.cand` from the host): talk relay-to-relay. */
+    fun addCandidate(c: String) {
+        val a = StunMsg.parseHostPort(c) ?: return
+        Log.i(TAG, "host candidate $c")
+        sock.addTarget(a)
+        thread(name = "pcr-turn-permit") { sock.turn?.permit(listOf(a)) }
+    }
 
     override val stats: StateFlow<Stats> get() = receiver.stats
     val cursor: StateFlow<Cursor> get() = receiver.cursor
