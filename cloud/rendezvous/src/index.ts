@@ -72,6 +72,13 @@ export class Room extends DurableObject<Env> {
       return new Response(null, { status: 101, webSocket: client });
     }
 
+    // the host's own TURN credentials (both ends relay when NATs block a direct path)
+    if (url.pathname === "/v1/turn" && q("role") === "host") {
+      const key = await this.key();
+      if (!key || !sameHex(q("sig") ?? "", await hostSig(key, pc, ts!))) return new Response("bad sig", { status: 401 });
+      return this.turn();
+    }
+
     // phone endpoints
     const dev = q("dev") ?? "";
     const key = await this.key();
