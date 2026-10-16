@@ -4,6 +4,7 @@ pub mod commands;
 pub mod files;
 pub mod host;
 pub mod input;
+pub mod log;
 pub mod media;
 pub mod net;
 pub mod notify;
@@ -66,7 +67,22 @@ pub fn show_window(app: &AppHandle) {
 /// thread, elevating (UAC) only when needed, so startup never blocks on the prompt.
 fn ensure_sunshine_creds(dir: PathBuf, sun: Arc<Sunshine>) {
     if let Some(c) = sunshine::load_creds(&dir) {
-        return sun.set_creds(c);
+        let state = std::fs::read_to_string(sunshine::STATE_FILE).ok();
+        if !sunshine::creds_stale(&c.0, state.as_deref()) {
+            sun.set_creds(c);
+            tauri::async_runtime::spawn(async move {
+                // Sunshine may still be (re)starting: wait for it, then hide its tray
+                for _ in 0..30 {
+                    if sun.status().await.running {
+                        sun.hide_tray().await;
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                }
+            });
+            return;
+        }
+        let _ = std::fs::remove_file(dir.join(sunshine::CREDS_FILE)); // stale: set up again below
     }
     std::thread::spawn(move || {
         let c = sunshine::ensure_credentials(&dir)
@@ -74,6 +90,7 @@ fn ensure_sunshine_creds(dir: PathBuf, sun: Arc<Sunshine>) {
             .or_else(|| win::sys::run_elevated("--init-sunshine").then(|| sunshine::load_creds(&dir)).flatten());
         if let Some(c) = c {
             sun.set_creds(c);
+            tauri::async_runtime::block_on(sun.hide_tray());
         }
     });
 }

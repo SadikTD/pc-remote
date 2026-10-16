@@ -6,6 +6,7 @@ import com.pcremote.agent.FailReason
 import com.pcremote.agent.PairUri
 import com.pcremote.agent.PairedPc
 import com.pcremote.agent.PcInfo
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -48,8 +49,14 @@ class PairingModel(private val deps: PairingDeps) {
         // pairing starts right after, against the address the agent actually reached.
         deps.agentPair(uri, deps.device, pin).fold(
             onSuccess = { r ->
+                // Retry while the PC is briefly unavailable (Sunshine restarting, Wi-Fi blip)
                 val uuid = withTimeoutOrNull(MOONLIGHT_TIMEOUT_MS) {
-                    runCatching { deps.moonlightPair(r.host, pin) }.getOrNull()
+                    var id: String? = null
+                    while (id == null) {
+                        id = runCatching { deps.moonlightPair(r.host, pin) }.getOrNull()
+                        if (id == null) delay(2_000)
+                    }
+                    id
                 }
                 deps.save(PairedPc(r.pc.id, r.pc.name, uri.hosts, uri.port, uri.fingerprint, r.token, uuid, r.pc.macs))
                 _state.value = PairingState.Done(r.pc.id)

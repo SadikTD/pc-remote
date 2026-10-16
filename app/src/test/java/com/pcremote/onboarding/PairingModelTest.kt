@@ -99,4 +99,18 @@ class PairingModelTest {
         PairingModel(f.deps).onScanned("pcremote://pair?n=Desk&h=192.168.0.9,10.0.0.5&p=47999&fp=$fp&t=otp")
         assertEquals("10.0.0.5", f.hostSeenByMoonlight)
     }
+
+    @Test fun `moonlight pairing is retried while the pc is briefly unavailable`() = runTest {
+        var calls = 0
+        val stored = mutableListOf<PairedPc>()
+        val deps = PairingDeps(
+            agentPair = { _: PairUri, _: String, _: String -> ok() },
+            moonlightPair = { _: String, _: String -> if (++calls < 3) null else "ML-UUID" },
+            save = { stored += it },
+            device = "Pixel",
+        )
+        PairingModel(deps).onScanned(qr)
+        assertEquals(3, calls)
+        assertEquals("ML-UUID", stored.single().moonlightUuid)
+    }
 }

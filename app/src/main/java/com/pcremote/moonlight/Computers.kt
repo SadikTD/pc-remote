@@ -52,7 +52,7 @@ class Computers(private val ctx: Context) {
     /** Adds the PC at [host] to Moonlight (if needed) and pairs with [pin]; returns its uuid or null. */
     suspend fun pair(host: String, pin: String): String? {
         val b = binder.filterNotNull().first()
-        return runInterruptible(Dispatchers.IO) { pairBlocking(b, host, pin) }
+        return abandonable { pairBlocking(b, host, pin) }
     }
 
     private fun pairBlocking(b: ComputerManagerService.ComputerManagerBinder, host: String, pin: String): String? {

@@ -11,6 +11,31 @@ use std::time::{Duration, Instant};
 pub const CREDS_FILE: &str = "sunshine.cred";
 pub const SUNSHINE_EXE: &str = r"C:\Program Files\Sunshine\sunshine.exe";
 const SERVICE: &str = "SunshineService";
+pub const STATE_FILE: &str = r"C:\Program Files\Sunshine\config\sunshine_state.json";
+
+/// The admin username Sunshine actually has (from its state file).
+pub fn state_username(state_json: &str) -> Option<String> {
+    serde_json::from_str::<Value>(state_json).ok()?.get("username")?.as_str().map(str::to_string)
+}
+
+/// True when our saved login isn't the one Sunshine has, e.g. `--creds` silently failed to write
+/// (it exits 0 even then) or the user changed it in Sunshine's web page.
+pub fn creds_stale(saved_user: &str, state_json: Option<&str>) -> bool {
+    state_json.is_some_and(|s| state_username(s).as_deref() != Some(saved_user))
+}
+
+/// From `GET /api/pin`: None = no request pending yet; Some(Some(id)) = the newest pending
+/// request (Sunshine 2026+ needs its id); Some(None) = older Sunshine without pairing ids.
+pub fn pending_pairing(v: &Value) -> Option<Option<String>> {
+    match v.get("pairings").and_then(Value::as_array) {
+        Some(list) => list.last().and_then(|p| p["id"].as_str()).map(|id| Some(id.to_string())),
+        None => Some(None),
+    }
+}
+
+fn read_state() -> Option<String> {
+    std::fs::read_to_string(STATE_FILE).ok()
+}
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 #[derive(Debug, PartialEq)]
@@ -66,10 +91,14 @@ pub fn restart_service() -> std::io::Result<bool> {
 /// elevated via `--init-sunshine`.
 pub fn ensure_credentials(dir: &Path) -> std::io::Result<(String, String)> {
     if let Some(c) = load_creds(dir) {
-        return Ok(c);
+        if !creds_stale(&c.0, read_state().as_deref()) {
+            return Ok(c);
+        }
     }
     let (user, pass) = ("pcremote".to_string(), b64url(&random::<18>()));
-    if !run(SUNSHINE_EXE, &["--creds", &user, &pass])? {
+    let ok = run(SUNSHINE_EXE, &["--creds", &user, &pass])?;
+    // `--creds` exits 0 even when it can't write the state file, so check what Sunshine has now
+    if !ok || creds_stale(&user, Some(read_state().unwrap_or_default().as_str())) {
         return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "sunshine --creds failed"));
     }
     restart_service()?;
@@ -110,14 +139,34 @@ impl Sunshine {
     pub async fn submit_pin(&self, pin: &str, name: &str) -> Result<(), SunshineError> {
         let deadline = Instant::now() + self.pin_timeout;
         loop {
-            let r = self.req(reqwest::Method::POST, "/api/pin").json(&json!({"pin": pin, "name": name})).send().await;
-            if let Ok(r) = r {
-                if r.status().is_success() {
+            // Newer Sunshine lists pending Moonlight requests and wants the PIN tied to one of them
+            let pending = match self.req(reqwest::Method::GET, "/api/pin").send().await {
+                Ok(r) if r.status().is_success() => pending_pairing(&r.json::<Value>().await.unwrap_or_default()),
+                _ => Some(None), // older Sunshine (no GET): post the PIN on its own
+            };
+            let Some(pairing_id) = pending else {
+                if Instant::now() >= deadline {
+                    return Err(SunshineError::PinTimeout);
+                }
+                tokio::time::sleep(self.retry).await;
+                continue;
+            };
+            let body = match &pairing_id {
+                Some(id) => json!({"pairing_id": id, "pin": pin, "name": name}),
+                None => json!({"pin": pin, "name": name}),
+            };
+            let r = self.req(reqwest::Method::POST, "/api/pin").json(&body).send().await;
+            match r {
+                Ok(r) => {
+                    let code = r.status();
                     let v: Value = r.json().await.unwrap_or_default();
-                    if v["status"] == true || v["status"] == "true" {
+                    if code.is_success() && (v["status"] == true || v["status"] == "true") {
+                        crate::log::line("sunshine: PIN accepted");
                         return Ok(());
                     }
+                    crate::log::line(&format!("sunshine: PIN not taken yet ({code} {v})"));
                 }
+                Err(e) => crate::log::line(&format!("sunshine: PIN request failed: {e}")),
             }
             if Instant::now() >= deadline {
                 return Err(SunshineError::PinTimeout);
@@ -133,6 +182,18 @@ impl Sunshine {
 
     /// Sets one key (`output_name`, `upnp`, …). Sunshine's POST replaces the whole
     /// file, so this merges into the current config, then applies it with a restart.
+    /// Turns off Sunshine's own tray icon and notifications: PC Remote Host is the UI, and
+    /// Sunshine's tray opens its PIN web page in the browser on every pair request.
+    pub async fn hide_tray(&self) {
+        let cur: Option<Value> = match self.req(reqwest::Method::GET, "/api/config").send().await {
+            Ok(r) if r.status().is_success() => r.json().await.ok(),
+            _ => None,
+        };
+        if cur.is_some_and(|c| c["system_tray"] != "disabled") {
+            let _ = self.set_config("system_tray", "disabled").await;
+        }
+    }
+
     pub async fn set_config(&self, key: &str, value: &str) -> Result<(), SunshineError> {
         let e = |e: reqwest::Error| SunshineError::Http(e.to_string());
         let cur: Map<String, Value> = self.req(reqwest::Method::GET, "/api/config").send().await.map_err(e)?
@@ -164,6 +225,60 @@ mod tests {
         s
     }
 
+    #[test]
+    fn pending_pairing_selection() {
+        assert_eq!(pending_pairing(&json!({"pairings": []})), None); // nothing pending yet
+        assert_eq!(pending_pairing(&json!({"pairings": [{"id": "a"}, {"id": "b"}]})), Some(Some("b".into()))); // newest
+        assert_eq!(pending_pairing(&json!({"status": true})), Some(None)); // older Sunshine: no ids
+    }
+
+    #[tokio::test]
+    async fn submit_pin_names_the_pending_pairing() {
+        let server = MockServer::start().await;
+        let id = "0123456789abcdef0123456789abcdef";
+        Mock::given(method("GET")).and(path("/api/pin"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"pairings": [{"id": id}]})))
+            .mount(&server).await;
+        Mock::given(method("POST")).and(path("/api/pin")).and(body_json(json!({"pairing_id": id, "pin": "4821", "name": "Pixel 8"})))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"status": true})))
+            .expect(1).mount(&server).await;
+        let s = Sunshine::new(&server.uri(), Some(("u".into(), "p".into())));
+        assert_eq!(s.submit_pin("4821", "Pixel 8").await, Ok(()));
+    }
+
+    #[tokio::test]
+    async fn hide_tray_turns_off_sunshines_tray_once() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET")).and(path("/api/config"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"system_tray": "enabled", "sunshine_name": "PC"})))
+            .mount(&server).await;
+        Mock::given(method("POST")).and(path("/api/config")).and(body_json(json!({"system_tray": "disabled", "sunshine_name": "PC"})))
+            .respond_with(ResponseTemplate::new(200)).expect(1).mount(&server).await;
+        Mock::given(method("POST")).and(path("/api/restart")).respond_with(ResponseTemplate::new(200)).mount(&server).await;
+        let s = Sunshine::new(&server.uri(), Some(("u".into(), "p".into())));
+        s.hide_tray().await;
+    }
+
+    #[tokio::test]
+    async fn hide_tray_leaves_an_already_hidden_tray_alone() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET")).and(path("/api/config"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"system_tray": "disabled"})))
+            .mount(&server).await;
+        Mock::given(method("POST")).and(path("/api/config")).respond_with(ResponseTemplate::new(200)).expect(0).mount(&server).await;
+        Sunshine::new(&server.uri(), Some(("u".into(), "p".into()))).hide_tray().await;
+    }
+
+    #[test]
+    fn stale_creds_are_detected_from_sunshine_state() {
+        let state = r#"{"username": "SadikTD", "salt": "x", "password": "y"}"#;
+        assert_eq!(state_username(state).as_deref(), Some("SadikTD"));
+        assert!(creds_stale("pcremote", Some(state)));
+        assert!(!creds_stale("SadikTD", Some(state)));
+        assert!(creds_stale("pcremote", Some("{}")));
+        assert!(!creds_stale("pcremote", None)); // can't read the state file: trust what we have
+    }
+
     #[tokio::test]
     async fn submit_pin_retries_until_accepted() {
         let srv = MockServer::start().await;
@@ -176,7 +291,8 @@ mod tests {
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({"status":true})))
             .expect(1).mount(&srv).await;
         assert_eq!(client(&srv.uri()).submit_pin("4821", "Pixel 8").await, Ok(()));
-        assert_eq!(srv.received_requests().await.unwrap().len(), 3);
+        let posts = srv.received_requests().await.unwrap().into_iter().filter(|r| r.method.as_str() == "POST").count();
+        assert_eq!(posts, 3); // older Sunshine (no pending list): PIN posted until taken
     }
 
     #[tokio::test]
