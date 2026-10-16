@@ -17,9 +17,9 @@ class ZoomPanTest {
         assertEquals(250f, z.toStreamY(250f), 0.001f)
     }
 
-    @Test fun `scale clamped between 1 and 4`() {
+    @Test fun `scale clamped between 1 and 5`() {
         val z = zp()
-        z.pinch(10f, 0f, 0f); assertEquals(4f, z.scale, 0.001f)
+        z.pinch(10f, 0f, 0f); assertEquals(5f, z.scale, 0.001f)
         z.pinch(0.01f, 0f, 0f); assertEquals(1f, z.scale, 0.001f)
         assertFalse(z.isZoomed)
     }
@@ -39,6 +39,15 @@ class ZoomPanTest {
         assertTrue(z.isZoomed)
         z.setContentSize(500f, 1000f)
         assertEquals(1f, z.scale, 0.001f); assertEquals(0f, z.tx, 0.001f)
+    }
+
+    @Test fun `follow keeps a point inside the margins`() {
+        val z = zp()
+        z.pinch(2f, 0f, 0f) // shows view x 0..500
+        z.follow(700f, 100f, 100f) // at screen 1400: pan left until it sits at 900
+        assertEquals(900f, 700f * z.scale + z.tx, 0.001f)
+        z.follow(300f, 100f, 100f) // already inside: no change
+        assertEquals(-500f, z.tx, 0.001f)
     }
 
     @Test fun `unzoomed mapping is identity`() {

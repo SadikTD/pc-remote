@@ -80,7 +80,13 @@ pub enum ClientMsg {
         /// The phone's PRS socket addresses (docs/remote-protocol.md).
         #[serde(default, deserialize_with = "null_as_default")]
         cands: Vec<String>,
+        /// Windows device name of the display to stream; empty = the one set on the PC.
+        #[serde(default, deserialize_with = "null_as_default")]
+        display: String,
     },
+    /// Switch the running stream to another display (an id from `stream.displays`).
+    #[serde(rename = "stream.display")]
+    StreamDisplay { id: String },
     #[serde(rename = "stream.stop")]
     StreamStop,
     #[serde(rename = "stream.cand")]
@@ -134,6 +140,7 @@ impl ClientMsg {
             ClientMsg::Net => "net",
             ClientMsg::MousePos { .. } => "mouse.pos",
             ClientMsg::StreamStart { .. } => "stream.start",
+            ClientMsg::StreamDisplay { .. } => "stream.display",
             ClientMsg::StreamStop => "stream.stop",
             ClientMsg::StreamCand { .. } => "stream.cand",
         }
@@ -189,6 +196,9 @@ pub enum ServerMsg {
     StreamReady { codec: String, w: u32, h: u32, fps: u32, port: u16, session: u32, key: String, cands: Vec<String> },
     #[serde(rename = "stream.error")]
     StreamError { code: String, msg: String },
+    /// The PC's displays and the one being streamed (after `stream.ready` and on every switch).
+    #[serde(rename = "stream.displays")]
+    StreamDisplays { list: Vec<crate::engine::capture::Display>, current: String },
     #[serde(rename = "cursor.shape")]
     CursorShape { png: String, hx: i32, hy: i32 },
     /// The host's TURN relayed address, once it relays too (docs/remote-protocol.md).
@@ -369,11 +379,11 @@ mod tests {
     fn stream_messages() {
         assert_eq!(
             c(r#"{"t":"stream.start","w":1920,"h":1080,"fps":60,"codecs":["hevc","h264"],"maxKbps":40000,"audio":true}"#),
-            ClientMsg::StreamStart { w: 1920, h: 1080, fps: 60, codecs: vec!["hevc".into(), "h264".into()], max_kbps: 40000, audio: true, cands: vec![] }
+            ClientMsg::StreamStart { w: 1920, h: 1080, fps: 60, codecs: vec!["hevc".into(), "h264".into()], max_kbps: 40000, audio: true, cands: vec![], display: String::new() }
         );
         assert_eq!(
             c(r#"{"t":"stream.start","codecs":["h264"],"cands":["192.168.0.5:40000","198.51.100.2:6000"]}"#),
-            ClientMsg::StreamStart { w: 0, h: 0, fps: 0, codecs: vec!["h264".into()], max_kbps: 0, audio: false, cands: vec!["192.168.0.5:40000".into(), "198.51.100.2:6000".into()] }
+            ClientMsg::StreamStart { w: 0, h: 0, fps: 0, codecs: vec!["h264".into()], max_kbps: 0, audio: false, cands: vec!["192.168.0.5:40000".into(), "198.51.100.2:6000".into()], display: String::new() }
         );
         assert_eq!(c(r#"{"t":"stream.cand","c":"203.0.113.9:3478"}"#), ClientMsg::StreamCand { c: "203.0.113.9:3478".into() });
         assert_eq!(
@@ -381,6 +391,13 @@ mod tests {
             serde_json::json!({"t":"remote","url":"wss://w","dev":"d","ticket":"t"})
         );
         assert_eq!(c(r#"{"t":"stream.stop"}"#), ClientMsg::StreamStop);
+        assert_eq!(c(r#"{"t":"stream.display","id":"\\\\.\\DISPLAY2"}"#), ClientMsg::StreamDisplay { id: r"\\.\DISPLAY2".into() });
+        assert!(matches!(c(r#"{"t":"stream.start","codecs":[],"display":"x"}"#), ClientMsg::StreamStart { display, .. } if display == "x"));
+        let d = crate::engine::capture::Display { id: "a".into(), name: "Display 1".into(), primary: true, rect: [0, 0, 1, 1] };
+        assert_eq!(
+            s(&ServerMsg::StreamDisplays { list: vec![d], current: "a".into() }),
+            serde_json::json!({"t":"stream.displays","list":[{"id":"a","name":"Display 1","primary":true}],"current":"a"})
+        );
         assert_eq!(c(r#"{"t":"mouse.pos","x":1.5,"y":0.25}"#).sanitize(), ClientMsg::MousePos { x: 1.0, y: 0.25 });
         assert_eq!(
             s(&ServerMsg::StreamReady { codec: "hevc".into(), w: 1920, h: 1080, fps: 60, port: 51234, session: 3735928559, key: "k".into(), cands: vec!["192.168.0.126:51234".into()] }),

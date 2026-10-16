@@ -89,6 +89,9 @@ pub struct Display {
     pub id: String,
     pub name: String,
     pub primary: bool,
+    /// Desktop coordinates: left, top, right, bottom.
+    #[serde(skip)]
+    pub rect: [i32; 4],
 }
 
 fn outputs() -> Vec<(IDXGIAdapter1, IDXGIOutput)> {
@@ -102,14 +105,14 @@ fn outputs() -> Vec<(IDXGIAdapter1, IDXGIOutput)> {
     }
 }
 
-fn describe(o: &IDXGIOutput) -> Option<Display> {
+pub fn describe(o: &IDXGIOutput) -> Option<Display> {
     // SAFETY: GetDesc fills a plain struct.
     let d = unsafe { o.GetDesc().ok()? };
     let n = d.DeviceName.iter().position(|c| *c == 0).unwrap_or(d.DeviceName.len());
     let id = String::from_utf16_lossy(&d.DeviceName[..n]);
     let r = d.DesktopCoordinates;
     let label = id.trim_start_matches(r"\\.\").replace("DISPLAY", "Display ");
-    Some(Display { name: format!("{label} ({}×{})", r.right - r.left, r.bottom - r.top), primary: r.left == 0 && r.top == 0, id })
+    Some(Display { name: format!("{label} ({}×{})", r.right - r.left, r.bottom - r.top), primary: r.left == 0 && r.top == 0, rect: [r.left, r.top, r.right, r.bottom], id })
 }
 
 /// Every display attached to the desktop.

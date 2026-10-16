@@ -19,6 +19,9 @@ class ToolbarState {
     var connecting by mutableStateOf<String?>(null)
     var connected by mutableStateOf(false)
     var pcName by mutableStateOf<String?>(null)
+    /** The PC's displays (only offered when there are several) and the one being streamed. */
+    var displays by mutableStateOf<List<com.pcremote.agent.DisplayInfo>>(emptyList())
+    var display by mutableStateOf("")
     val bar = KeyboardBarModel()
     var barTick by mutableIntStateOf(0)
 }
@@ -31,4 +34,5 @@ interface ToolbarActions {
     fun disconnect()
     fun keys(events: List<KeyEvt>)
     fun coachDone()
+    fun selectDisplay(id: String)
 }

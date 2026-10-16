@@ -10,6 +10,18 @@ import android.view.SurfaceView
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material3.Icon
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.Constraints
+import com.pcremote.stream.ZoomPan
+import com.pcremote.ui.theme.MidnightShapes
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -101,12 +113,17 @@ fun StreamScreen(pcId: String, onBack: () -> Unit) {
     // start once the agent is online and the surface exists; stop when either goes away
     val ready = agent is AgentState.Online && surface != null
     DisposableEffect(controller, ready) {
-        if (ready) controller.start(request(ctx))
+        if (ready) controller.start(request(ctx).copy(display = savedDisplay(ctx, pcId)))
         onDispose { controller.stop(); pipe = null; nextSock.getAndSet(null)?.close() }
     }
+    val zoom = remember { ZoomPan() }
     LaunchedEffect(session) {
         session.conn.incoming.collect { m ->
             if (m is Msg.StreamCand) pipe?.addCandidate(m.c)
+            if (m is Msg.StreamDisplays) {
+                if (m.current != toolbar.display) zoom.reset()
+                toolbar.displays = m.list; toolbar.display = m.current
+            }
             if (m is Msg.CursorShape) runCatching {
                 val b = Base64.decode(m.png, Base64.DEFAULT)
                 cursorShape = Triple(BitmapFactory.decodeByteArray(b, 0, b.size).asImageBitmap(), m.hx, m.hy)
@@ -126,7 +143,9 @@ fun StreamScreen(pcId: String, onBack: () -> Unit) {
             stats.rttMs / 2 + stats.decodeMs, stats.rttMs, stats.lossPct) // network one-way + decode/render
     }.orEmpty()
 
-    val send: (Msg) -> Unit = { controller.sendInput(it) }
+    // latest controller: a retry builds a new one, and handlers created earlier must reach it
+    val currentController by rememberUpdatedState(controller)
+    val send: (Msg) -> Unit = { currentController.sendInput(it) }
     val trackpad = remember { TrackpadModel(settings.pointerSpeed, settings.naturalScroll) }
     val direct = remember { DirectTouchModel(settings.naturalScroll) }
     val actions = remember {
@@ -138,11 +157,15 @@ fun StreamScreen(pcId: String, onBack: () -> Unit) {
             override fun disconnect() = onBack()
             override fun keys(events: List<KeyEvt>) = events.forEach { send(it.toMsg()) }
             override fun coachDone() = markCoachSeen(ctx)
+            override fun selectDisplay(id: String) {
+                currentController.selectDisplay(id); saveDisplay(ctx, pcId, id); zoom.reset()
+            }
         }
     }
 
     val c = LocalMidnight.current
     var box by remember { mutableStateOf(IntSize.Zero) }
+    LaunchedEffect(box) { zoom.setContentSize(box.width.toFloat(), box.height.toFloat()) }
     Box(Modifier.fillMaxSize().background(Color.Black).onSizeChanged { box = it }) {
         val pic = streaming?.let { fit(box, it.w, it.h) }
         // the video surface, letterboxed to the stream's aspect
@@ -156,22 +179,33 @@ fun StreamScreen(pcId: String, onBack: () -> Unit) {
                     })
                 }
             },
-            modifier = if (pic != null) Modifier.offset { IntOffset(pic.left, pic.top) }.size(with(androidx.compose.ui.platform.LocalDensity.current) { pic.w.toDp() }, with(androidx.compose.ui.platform.LocalDensity.current) { pic.h.toDp() })
-            else Modifier.fillMaxSize(),
+            // letterboxed to the stream's aspect, then zoomed (placed in the layout phase: no recomposition per pinch frame)
+            modifier = if (pic != null) Modifier.layout { m, c ->
+                val z = zoom.scale
+                val pl = m.measure(Constraints.fixed((pic.w * z).roundToInt(), (pic.h * z).roundToInt()))
+                layout(c.maxWidth, c.maxHeight) { pl.place((pic.left * z + zoom.tx).roundToInt(), (pic.top * z + zoom.ty).roundToInt()) }
+            } else Modifier.fillMaxSize(),
         )
         // the PC's pointer (desktop capture leaves it out; the host sends it separately)
         if (streaming != null && pic != null) {
             val cur by remember(pipe) { pipe?.cursor ?: MutableStateFlow(Cursor(0, 0, false)) }.collectAsState()
             val shape = cursorShape
+            val sx = pic.w.toFloat() / streaming.w; val sy = pic.h.toFloat() / streaming.h
+            // zoomed trackpad: the view follows the pointer
+            LaunchedEffect(cur, toolbar.trackpad) {
+                if (toolbar.trackpad && zoom.isZoomed && cur.visible)
+                    zoom.follow(pic.left + cur.x * sx, pic.top + cur.y * sy, minOf(box.width, box.height) * 0.12f)
+            }
             Canvas(Modifier.fillMaxSize()) {
                 if (!cur.visible) return@Canvas
-                val sx = pic.w.toFloat() / streaming.w; val sy = pic.h.toFloat() / streaming.h
+                withTransform({ translate(zoom.tx, zoom.ty); scale(zoom.scale, zoom.scale, Offset.Zero) }) {
                 if (shape != null) {
                     val (img, hx, hy) = shape
                     drawImage(img, dstOffset = IntOffset((pic.left + (cur.x - hx) * sx).toInt(), (pic.top + (cur.y - hy) * sy).toInt()),
                         dstSize = IntSize(maxOf(1, (img.width * sx).toInt()), maxOf(1, (img.height * sy).toInt())))
                 } else {
-                    drawCircle(Color.White, 6.dp.toPx(), Offset(pic.left + cur.x * sx, pic.top + cur.y * sy))
+                    drawCircle(Color.White, 6.dp.toPx() / zoom.scale, Offset(pic.left + cur.x * sx, pic.top + cur.y * sy))
+                }
                 }
             }
         }
@@ -181,16 +215,41 @@ fun StreamScreen(pcId: String, onBack: () -> Unit) {
                 kotlinx.coroutines.coroutineScope {
                     val gestures = this
                     var hold: Job? = null
+                    var view = false // this gesture zooms/pans the view instead of driving the PC
+                    var span0 = 0f // finger distance when the second finger landed
+                    val pinchStart = 40.dp.toPx()
                     fun emit(ms: List<Msg>) { ms.forEach(send); if (ms.any { it is Msg.MouseButton && it.down }) haptics.click() }
                     try {
                         awaitPointerEventScope {
                             while (true) {
                                 val e = awaitPointerEvent()
                                 val t = e.changes.firstOrNull()?.uptimeMillis ?: 0L
+                                val down = e.changes.filter { it.pressed }
+                                if (down.size < 2) span0 = 0f
+                                if (down.size == 2 && !view) {
+                                    val span = (down[0].position - down[1].position).getDistance()
+                                    if (span0 == 0f) span0 = span
+                                    // fingers spreading or pinching zoom; a zoomed direct-touch view pans with two fingers
+                                    if (abs(span - span0) > pinchStart || (!toolbar.trackpad && zoom.isZoomed)) {
+                                        view = true; hold?.cancel(); emit(trackpad.cancel() + direct.cancel())
+                                    }
+                                }
+                                if (view) {
+                                    if (down.size >= 2) {
+                                        val (a, b) = down
+                                        val prevSpan = (a.previousPosition - b.previousPosition).getDistance()
+                                        val mid = (a.position + b.position) / 2f; val prevMid = (a.previousPosition + b.previousPosition) / 2f
+                                        if (prevSpan > 0f) zoom.pinch((a.position - b.position).getDistance() / prevSpan, mid.x, mid.y)
+                                        zoom.pan(mid.x - prevMid.x, mid.y - prevMid.y)
+                                    }
+                                    e.changes.forEach { it.consume() }
+                                    if (down.isEmpty()) view = false
+                                    continue
+                                }
                                 for (ch in e.changes) {
                                     val id = ch.id.value.toInt()
                                     val p = ch.position
-                                    val fx = (p.x - pic.left) / pic.w; val fy = (p.y - pic.top) / pic.h
+                                    val fx = (zoom.toStreamX(p.x) - pic.left) / pic.w; val fy = (zoom.toStreamY(p.y) - pic.top) / pic.h
                                     when {
                                         ch.pressed && !ch.previousPressed -> {
                                             hold?.cancel()
@@ -217,6 +276,7 @@ fun StreamScreen(pcId: String, onBack: () -> Unit) {
             })
         }
         StreamOverlay(toolbar, actions)
+        if (zoom.isZoomed) ZoomChip(zoom.scale, Modifier.align(Alignment.TopCenter).padding(top = 12.dp), zoom::reset)
         if (toolbar.keyboardOpen && streaming != null) {
             Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(c.surface.copy(alpha = 0.9f))) {
                 TypingField(send, toolbar.bar) { toolbar.barTick++ }
@@ -296,6 +356,26 @@ private fun Immersive() {
         }
     }
 }
+
+@Composable
+private fun ZoomChip(scale: Float, modifier: Modifier, reset: () -> Unit) {
+    val c = LocalMidnight.current
+    Row(
+        modifier.clip(MidnightShapes.pill).background(c.surface.copy(alpha = 0.86f)).clickable(onClick = reset)
+            .padding(start = 14.dp, end = 10.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("%.1f×".format(scale), color = c.text, style = MaterialTheme.typography.labelLarge)
+        Spacer(Modifier.width(6.dp))
+        Icon(Icons.Rounded.Close, stringResource(R.string.pcr_zoom_reset), tint = c.textDim, modifier = Modifier.size(16.dp))
+    }
+}
+
+/** The display last picked for this PC (empty = the one set on the PC). */
+private fun savedDisplay(ctx: Context, pcId: String) =
+    ctx.getSharedPreferences("pcr_stream2", Context.MODE_PRIVATE).getString("display_$pcId", "").orEmpty()
+private fun saveDisplay(ctx: Context, pcId: String, id: String) =
+    ctx.getSharedPreferences("pcr_stream2", Context.MODE_PRIVATE).edit().putString("display_$pcId", id).apply()
 
 private fun coachSeen(ctx: Context) = ctx.getSharedPreferences("pcr_stream2", Context.MODE_PRIVATE).getBoolean("coach", false)
 private fun markCoachSeen(ctx: Context) = ctx.getSharedPreferences("pcr_stream2", Context.MODE_PRIVATE).edit().putBoolean("coach", true).apply()

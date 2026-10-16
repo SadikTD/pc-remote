@@ -39,7 +39,7 @@ class RoutingWs(private val relay: RelayInfo?, private val direct: WsFactory = O
 }
 
 object RelayWs {
-    private val client = OkHttpClient.Builder().connectTimeout(6, TimeUnit.SECONDS).readTimeout(0, TimeUnit.MILLISECONDS).build()
+    private val client = OkHttpClient.Builder().socketFactory(NoDelaySockets).connectTimeout(6, TimeUnit.SECONDS).readTimeout(0, TimeUnit.MILLISECONDS).build()
 
     fun open(r: RelayInfo, listener: WsListener): Ws {
         val ws = client.newWebSocket(Request.Builder().url(r.phoneUrl(System.currentTimeMillis() / 1000)).build(), object : WebSocketListener() {

@@ -65,7 +65,12 @@ sealed interface Msg {
     @Serializable @SerialName("stream.start") data class StreamStart(
         val w: Int, val h: Int, val fps: Int, val codecs: List<String>, val maxKbps: Int, val audio: Boolean = true,
         val cands: List<String> = emptyList(),
+        /** A display id from [StreamDisplays]; empty = the one set on the PC. */
+        val display: String = "",
     ) : Msg
+    /** Switch the running stream to another display. */
+    @Serializable @SerialName("stream.display") data class StreamDisplay(val id: String) : Msg
+    @Serializable @SerialName("stream.displays") data class StreamDisplays(val list: List<DisplayInfo>, val current: String) : Msg
     @Serializable @SerialName("stream.ready") data class StreamReady(
         val codec: String, val w: Int, val h: Int, val fps: Int, val port: Int, val session: Long, val key: String,
         val cands: List<String> = emptyList(),
@@ -82,6 +87,8 @@ sealed interface Msg {
         val lan: List<String>, val public: String? = null, val anywhere: Boolean = false, val upnp: Boolean = false,
     ) : Msg
 }
+
+@Serializable data class DisplayInfo(val id: String, val name: String, val primary: Boolean = false)
 
 object Wire {
     @OptIn(ExperimentalSerializationApi::class)

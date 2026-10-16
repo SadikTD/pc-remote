@@ -21,10 +21,11 @@ class TrackpadModel(private val speed: Float = 1f, private val natural: Boolean 
     private var fx = 0f
     private var fy = 0f
     private var scrollAcc = 0f
+    private var vel = 0f
 
     fun down(id: Int, x: Float, y: Float, t: Long): List<Msg> {
         if (pointers.isEmpty()) {
-            gestureStart = t; lastMove = t; moved = false; maxPointers = 0; scrollAcc = 0f
+            gestureStart = t; lastMove = t; moved = false; maxPointers = 0; scrollAcc = 0f; vel = 0f
         }
         pointers[id] = P(x, y, x, y)
         maxPointers = maxOf(maxPointers, pointers.size)
@@ -41,8 +42,9 @@ class TrackpadModel(private val speed: Float = 1f, private val natural: Boolean 
         return when (pointers.size) {
             1 -> {
                 if (maxPointers > 1) return emptyList() // leftover finger of a scroll/right-click
-                val v = hypot(dx, dy) / (dt / 1000f) // px/s
-                val gain = speed * (1f + ((v - ACCEL_START) / ACCEL_RANGE).coerceIn(0f, ACCEL_MAX))
+                // smoothed px/s: frame-to-frame timing jitter would otherwise make the gain (and the pointer) wobble
+                vel += (hypot(dx, dy) / (dt / 1000f) - vel) * 0.35f
+                val gain = speed * (1f + ((vel - ACCEL_START) / ACCEL_RANGE).coerceIn(0f, ACCEL_MAX))
                 fx += dx * gain; fy += dy * gain
                 val ix = fx.toInt(); val iy = fy.toInt()
                 fx -= ix; fy -= iy

@@ -18,6 +18,8 @@
     <string name="pcr_tb_lower_quality">Lower quality for smoother stream</string>
     <string name="pcr_tb_keyboard">Keyboard</string>
     <string name="pcr_tb_media_keys">Media keys</string>
+    <string name="pcr_tb_displays">Displays</string>
+    <string name="pcr_zoom_reset">Reset zoom</string>
     <string name="pcr_tb_windows_key">Windows key</string>
     <string name="pcr_tb_alt_tab">Alt+Tab</string>
     <string name="pcr_tb_copy">Copy</string>

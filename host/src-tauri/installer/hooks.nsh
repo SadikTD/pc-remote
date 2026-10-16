@@ -3,6 +3,7 @@
 
 !define PCR_RUN_KEY "Software\Microsoft\Windows\CurrentVersion\Run"
 !define PCR_FW_RULE "PC Remote Host"
+!define PCR_TASK "PC Remote"
 ; Resolved here: inside a macro, __FILEDIR__ would be the generated script's folder.
 !define PCR_DEPS "${__FILEDIR__}\deps"
 
@@ -24,6 +25,12 @@
 
   WriteRegStr HKCU "${PCR_RUN_KEY}" "PC Remote" '"$INSTDIR\pc-remote-host.exe" --hidden'
 
+  ; On-demand task that starts the host elevated without a UAC prompt, so its input reaches admin
+  ; windows (Task Manager…). Normal launches hand over to it (src/win/elevate.rs). No time limit,
+  ; normal priority (tasks default to below normal), runs on battery.
+  DetailPrint "Registering the elevated start task…"
+  nsExec::Exec `powershell.exe -NoProfile -Command "$$a = New-ScheduledTaskAction -Execute '$INSTDIR\pc-remote-host.exe' -Argument '--hidden'; $$p = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Highest; $$s = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -Priority 4 -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew; Register-ScheduledTask -TaskName '${PCR_TASK}' -Action $$a -Principal $$p -Settings $$s -Force"`
+
   ; Upgrading from v1: PC Remote no longer uses Sunshine. Offer to remove it (never forced;
   ; silent installs keep it).
   nsExec::Exec 'sc.exe query SunshineService'
@@ -39,5 +46,6 @@
 !macro NSIS_HOOK_PREUNINSTALL
   nsExec::Exec 'netsh advfirewall firewall delete rule name="${PCR_FW_RULE}"'
   DeleteRegValue HKCU "${PCR_RUN_KEY}" "PC Remote"
+  nsExec::Exec 'schtasks.exe /Delete /TN "${PCR_TASK}" /F'
   DeleteRegKey HKCU "Software\Classes\*\shell\PCRemote.Send"
 !macroend

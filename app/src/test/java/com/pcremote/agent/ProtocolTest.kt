@@ -33,6 +33,14 @@ class ProtocolTest {
         assertTrue(Wire.encode(Msg.NetReq).contains("\"t\":\"net\""))
     }
 
+    @Test fun `display messages`() {
+        assertEquals(
+            Msg.StreamDisplays(listOf(DisplayInfo("a", "Display 1", true), DisplayInfo("b", "Display 2")), "b"),
+            Wire.decode("""{"t":"stream.displays","list":[{"id":"a","name":"Display 1","primary":true},{"id":"b","name":"Display 2","primary":false}],"current":"b"}"""),
+        )
+        assertEquals("""{"t":"stream.display","id":"b"}""", Wire.encode(Msg.StreamDisplay("b")))
+    }
+
     @Test fun `unknown fields are ignored`() {
         assertEquals(Msg.MouseMove(1, 2), Wire.decode("""{"t":"mouse.move","dx":1,"dy":2,"extra":1}"""))
     }

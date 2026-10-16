@@ -23,6 +23,14 @@ All integers are big-endian.
   - `key` is a fresh random AES-256 key for this session only. It travels over TLS and nowhere else.
   - `port` is the host's UDP port for this session: 47998 when free (the port UPnP maps for access from anywhere), otherwise any. The agent advertises `stream` in `caps`.
 - `cursor.shape` is sent whenever the pointer shape changes: a PNG with a premultiplied-alpha source. `hx`/`hy` is the hotspot in pixels.
+- Displays:
+  ```json
+  ← {"t":"stream.displays","list":[{"id":"\\\\.\\DISPLAY1","name":"Display 1 (1920×1080)","primary":true}],"current":"\\\\.\\DISPLAY1"}
+  → {"t":"stream.display","id":"\\\\.\\DISPLAY2"}
+  ```
+  - `stream.start` may carry `display` (an `id`; absent or empty = the display set on the PC).
+  - The host sends `stream.displays` once streaming starts and after every switch.
+  - `stream.display` switches the running stream: same `session`, `port`, `key` and codec, a new `stream.ready` with the new size, then a keyframe. The PC's pointer moves to the centre of the new display. `mouse.pos` maps onto the streamed display.
 - `stream.stop`, or closing the agent connection, ends the session. The host also ends it after 5 s without any packet from the phone.
 
 ## UDP packets

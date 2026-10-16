@@ -57,8 +57,22 @@ fun wsUrl(host: String, port: Int): String {
 }
 
 /** Real WSS sockets with the certificate pinned to the pairing fingerprint. */
+/**
+ * Sockets with Nagle off. Input is a stream of tiny frames; with Nagle on, each waits for the host's
+ * (delayed, up to 200 ms) ACK of the previous one, so the pointer moves in bursts.
+ */
+object NoDelaySockets : javax.net.SocketFactory() {
+    private val d = javax.net.SocketFactory.getDefault()
+    private fun nd(s: java.net.Socket) = s.apply { tcpNoDelay = true }
+    override fun createSocket() = nd(d.createSocket())
+    override fun createSocket(h: String, p: Int) = nd(d.createSocket(h, p))
+    override fun createSocket(h: String, p: Int, la: java.net.InetAddress, lp: Int) = nd(d.createSocket(h, p, la, lp))
+    override fun createSocket(h: java.net.InetAddress, p: Int) = nd(d.createSocket(h, p))
+    override fun createSocket(h: java.net.InetAddress, p: Int, la: java.net.InetAddress, lp: Int) = nd(d.createSocket(h, p, la, lp))
+}
+
 object OkHttpWs : WsFactory {
-    private val base = OkHttpClient()
+    private val base = OkHttpClient.Builder().socketFactory(NoDelaySockets).build()
 
     override fun open(host: String, port: Int, fingerprint: String, listener: WsListener): Ws {
         val tm = PinnedTrust.trustManager(fingerprint)

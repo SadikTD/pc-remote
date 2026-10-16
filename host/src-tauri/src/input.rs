@@ -29,7 +29,7 @@ impl Btn {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Ev {
     Move { dx: i32, dy: i32 },
-    /// Absolute position on the primary display, 0..=65535 on each axis.
+    /// Absolute position on the streamed display ([STREAM_RECT]; the primary one when none), 0..=65535 on each axis.
     Abs { x: i32, y: i32 },
     Button { b: Btn, down: bool },
     Wheel(i32),
@@ -141,6 +141,28 @@ pub fn is_extended(vk: u16) -> bool {
     matches!(vk, 0x03 | 0x21..=0x28 | 0x2C..=0x2E | 0x5B..=0x5D | 0x6F | 0x90 | 0xA3 | 0xA5 | 0xA6..=0xB7)
 }
 
+/// The display being streamed, in desktop coordinates (left, top, right, bottom): `Ev::Abs` lands on it.
+/// ponytail: process-wide, fine while only one stream runs at a time (the engine enforces that).
+pub static STREAM_RECT: std::sync::Mutex<Option<[i32; 4]>> = std::sync::Mutex::new(None);
+
+fn abs(x: i32, y: i32) -> INPUT {
+    use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN};
+    let Some([l, t, r, b]) = *STREAM_RECT.lock().unwrap() else { return mouse(x, y, 0, MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE) };
+    // SAFETY: plain metric queries.
+    let (vx, vy, vw, vh) = unsafe {
+        (GetSystemMetrics(SM_XVIRTUALSCREEN), GetSystemMetrics(SM_YVIRTUALSCREEN), GetSystemMetrics(SM_CXVIRTUALSCREEN), GetSystemMetrics(SM_CYVIRTUALSCREEN))
+    };
+    let (nx, ny) = to_virtual(x, y, [l, t, r, b], [vx, vy, vw, vh]);
+    mouse(nx, ny, 0, MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK)
+}
+
+/// 0..=65535 on `display` → 0..=65535 on the virtual desktop `virt` (x, y, width, height).
+fn to_virtual(x: i32, y: i32, [l, t, r, b]: [i32; 4], [vx, vy, vw, vh]: [i32; 4]) -> (i32, i32) {
+    let px = l as f64 + x as f64 / 65535.0 * (r - l - 1) as f64;
+    let py = t as f64 + y as f64 / 65535.0 * (b - t - 1) as f64;
+    (((px - vx as f64) * 65535.0 / (vw - 1).max(1) as f64).round() as i32, ((py - vy as f64) * 65535.0 / (vh - 1).max(1) as f64).round() as i32)
+}
+
 /// The real emitter: `SendInput`.
 pub struct SendInputEmitter;
 
@@ -175,7 +197,7 @@ fn key(vk: u16, scan: u16, flags: KEYBD_EVENT_FLAGS) -> INPUT {
 fn to_input(ev: &Ev) -> INPUT {
     match *ev {
         Ev::Move { dx, dy } => mouse(dx, dy, 0, MOUSEEVENTF_MOVE),
-        Ev::Abs { x, y } => mouse(x, y, 0, MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE),
+        Ev::Abs { x, y } => abs(x, y),
         Ev::Wheel(v) => mouse(0, 0, v, MOUSEEVENTF_WHEEL),
         Ev::HWheel(v) => mouse(0, 0, v, MOUSEEVENTF_HWHEEL),
         Ev::Button { b, down } => {
@@ -210,6 +232,16 @@ fn to_input(ev: &Ev) -> INPUT {
 mod tests {
     use super::*;
     use crate::proto::ClientMsg;
+
+    #[test]
+    fn abs_maps_onto_the_streamed_display() {
+        // two 1920x1080 displays side by side, the second one streamed
+        let (d, v) = ([1920, 0, 3840, 1080], [0, 0, 3840, 1080]);
+        assert_eq!(to_virtual(0, 0, d, v), (32776, 0));
+        assert_eq!(to_virtual(65535, 65535, d, v), (65535, 65535));
+        // a display left of the primary: negative desktop coordinates
+        assert_eq!(to_virtual(0, 0, [-1920, 0, 0, 1080], [-1920, 0, 3840, 1080]), (0, 0));
+    }
     use std::sync::{Arc, Mutex};
 
     #[derive(Clone, Default)]

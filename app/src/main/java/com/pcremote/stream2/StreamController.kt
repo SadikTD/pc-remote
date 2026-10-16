@@ -26,7 +26,7 @@ sealed interface StreamUi {
     data class Failed(val code: String, val msg: String) : StreamUi
 }
 
-data class StreamRequest(val w: Int, val h: Int, val fps: Int, val maxKbps: Int, val audio: Boolean = true)
+data class StreamRequest(val w: Int, val h: Int, val fps: Int, val maxKbps: Int, val audio: Boolean = true, val display: String = "")
 
 /**
  * Drives one Screen session over the agent: `stream.start` → `stream.ready` → pipeline; follows
@@ -66,7 +66,7 @@ class StreamController(
         timeout = scope.launch {
             val cands = prepare()
             repeat(maxOf(1, (timeoutMs / ASK_EVERY_MS).toInt())) {
-                send(Msg.StreamStart(r.w, r.h, r.fps, codecs, r.maxKbps, r.audio, cands))
+                send(Msg.StreamStart(r.w, r.h, r.fps, codecs, r.maxKbps, r.audio, cands, r.display))
                 delay(ASK_EVERY_MS)
                 if (session != null) return@launch
             }
@@ -103,6 +103,12 @@ class StreamController(
     }
 
     fun sendInput(m: Msg) { pipeline?.sendInput(m) }
+
+    /** Switches the running stream to another display; later restarts (codec fallback, retry) keep it. */
+    fun selectDisplay(id: String) {
+        request = request?.copy(display = id)
+        send(Msg.StreamDisplay(id))
+    }
 
     fun stop() {
         timeout?.cancel(); listen?.cancel(); listen = null

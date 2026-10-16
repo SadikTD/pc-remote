@@ -146,7 +146,7 @@ private fun EdgePanel(state: ToolbarState, a: ToolbarActions, close: () -> Unit)
         Spacer(Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Tile(Icons.Rounded.Keyboard, R.string.pcr_tb_keyboard, active = state.keyboardOpen, modifier = Modifier.weight(1f)) {
-                state.keyboardOpen = !state.keyboardOpen; a.keyboard(); close()
+                a.keyboard(); close()
             }
             Tile(if (state.trackpad) Icons.Rounded.Mouse else Icons.Rounded.TouchApp,
                 if (state.trackpad) R.string.pcr_trackpad else R.string.pcr_direct_touch, modifier = Modifier.weight(1f)) {
@@ -154,6 +154,16 @@ private fun EdgePanel(state: ToolbarState, a: ToolbarActions, close: () -> Unit)
             }
             Tile(Icons.Rounded.Speed, R.string.pcr_tb_stats, active = state.showPerf, modifier = Modifier.weight(1f)) {
                 state.showPerf = !state.showPerf
+            }
+        }
+        if (state.displays.size > 1) {
+            Section(R.string.pcr_tb_displays)
+            state.displays.forEach { d ->
+                Tile(Icons.Rounded.Monitor, null, text = d.name, wide = true, active = d.id == state.display,
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                    if (d.id != state.display) { state.display = d.id; a.selectDisplay(d.id) }
+                    close()
+                }
             }
         }
         Section(R.string.pcr_tb_media_keys)
@@ -195,7 +205,7 @@ private fun Section(title: Int) {
 
 @Composable
 private fun Tile(icon: ImageVector, label: Int?, modifier: Modifier = Modifier, active: Boolean = false, compact: Boolean = false,
-                 wide: Boolean = false, onClick: () -> Unit) {
+                 wide: Boolean = false, text: String? = null, onClick: () -> Unit) {
     val c = LocalMidnight.current
     val haptics = rememberHaptics()
     val bg = if (active) c.accent.copy(alpha = 0.22f) else c.surfaceHigh
@@ -204,7 +214,7 @@ private fun Tile(icon: ImageVector, label: Int?, modifier: Modifier = Modifier, 
             verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, null, tint = c.accent, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(10.dp))
-            if (label != null) Text(stringResource(label), color = c.text, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+            (text ?: label?.let { stringResource(it) })?.let { Text(it, color = c.text, style = MaterialTheme.typography.labelMedium, maxLines = 1) }
         }
     } else {
         Column(

@@ -68,6 +68,8 @@ pub struct Shared {
     turn: Mutex<Option<Arc<Turn>>>,
     /// Peers whose packets arrived through `turn`: replies go back the same way.
     via_relay: Mutex<std::collections::HashSet<SocketAddr>>,
+    /// A display the phone asked to switch to (`stream.display`), picked up by the video thread.
+    switch: Mutex<Option<String>>,
 }
 
 fn hdr(typ: Type, frame_id: u32) -> Header {
@@ -90,6 +92,7 @@ impl Shared {
             punch_for: PUNCH_FOR,
             turn: Mutex::default(),
             via_relay: Mutex::default(),
+            switch: Mutex::default(),
         }
     }
 
@@ -364,6 +367,8 @@ struct Video {
     /// Stream size at notch 0.
     base: (u32, u32),
     fps: u32,
+    /// The display being captured.
+    shown: capture::Display,
 }
 
 impl Video {
@@ -371,6 +376,7 @@ impl Video {
     fn open(p: &Params, kbps: u32) -> Result<Video, ServerMsg> {
         let err = |code: &str, msg: &str| ServerMsg::StreamError { code: code.into(), msg: msg.into() };
         let (dev, ctx, out, luid) = capture::device(&p.display).ok_or_else(|| err("capture_failed", "no display to capture"))?;
+        let shown = capture::describe(&out).ok_or_else(|| err("capture_failed", "no display to capture"))?;
         let first = Dxgi::open(&dev, &ctx, &out).ok_or_else(|| err("capture_failed", "the desktop can't be captured right now (locked?)"))?;
         let avail = codecs_available(luid);
         let codec = p
@@ -385,10 +391,16 @@ impl Video {
         let enc = Encoder::new(&dev, luid, codec, base, fps, kbps).map_err(|e| err("no_encoder", &e.message()))?;
         let (d, c) = (dev.clone(), ctx.clone());
         let cap = Capture::new(Some(first), move || Dxgi::open(&d, &c, &out));
-        Ok(Video { dev, ctx, luid, cap, enc, base, fps })
+        Ok(Video { dev, ctx, luid, cap, enc, base, fps, shown })
     }
 
-    fn run(mut self, sh: &Shared, ready: &ReadyInfo, notify: &Notify) {
+    fn shown(&self, notify: &Notify) {
+        *crate::input::STREAM_RECT.lock().unwrap() = Some(self.shown.rect);
+        notify(ServerMsg::StreamDisplays { list: capture::displays(), current: self.shown.id.clone() });
+    }
+
+    fn run(mut self, sh: &Shared, ready: &ReadyInfo, notify: &Notify, p: &Params) {
+        self.shown(notify);
         let interval = Duration::from_secs(1) / self.fps;
         let (mut last_enc, mut pending) = (Instant::now(), false);
         // Token bucket: at most `fps` frames per second on average, bursts of 2. A fixed frame
@@ -401,6 +413,22 @@ impl Video {
         let mut last_cursor = None;
         while !sh.stopped() {
             let t = *sh.target.lock().unwrap();
+            if let Some(id) = sh.switch.lock().unwrap().take().filter(|id| *id != self.shown.id) {
+                // same codec (the phone's decoder is set up for it), then the current notch below
+                let p = Params { display: id, codecs: vec![codec_name(self.enc.codec()).into()], ..p.clone() };
+                if let Ok(v) = Video::open(&p, t.kbps) {
+                    crate::log::line(&format!("stream: switched to {}", v.shown.id));
+                    self = v;
+                    (img, conv, pending, last_cursor) = (None, None, false, None);
+                    applied.notch = 0;
+                    sh.idr.store(true, Ordering::Relaxed);
+                    notify(ready.msg(self.enc.size));
+                    self.shown(notify);
+                    let [l, t, r, b] = self.shown.rect;
+                    // SAFETY: plain cursor move; the pointer follows the view to the new display.
+                    let _ = unsafe { windows::Win32::UI::WindowsAndMessaging::SetCursorPos((l + r) / 2, (t + b) / 2) };
+                }
+            }
             if t.notch != applied.notch {
                 let size = notch_size(self.base.0, self.base.1, t.notch);
                 match Encoder::new(&self.dev, self.luid, self.enc.codec(), size, self.fps, t.kbps) {
@@ -541,7 +569,7 @@ impl StreamSession {
                 Ok(v) => {
                     let _ = tx.send(Ok((v.enc.codec(), v.fps, v.base)));
                     if let Ok(ready) = ready_rx.recv() {
-                        v.run(&vsh, &ready, &vn);
+                        v.run(&vsh, &ready, &vn, &vp);
                     }
                 }
                 Err(e) => {
@@ -595,6 +623,11 @@ impl StreamSession {
         self.sh.clone()
     }
 
+    /// `stream.display`: switch to another display without restarting the stream.
+    pub fn switch_display(&self, id: String) {
+        *self.sh.switch.lock().unwrap() = Some(id);
+    }
+
     pub fn alive(&self) -> bool {
         !self.sh.stopped()
     }
@@ -607,6 +640,7 @@ impl Drop for StreamSession {
         for t in self.threads.drain(..) {
             let _ = t.join();
         }
+        *crate::input::STREAM_RECT.lock().unwrap() = None;
     }
 }
 

@@ -81,10 +81,24 @@ pub fn run_with(extra: impl FnOnce(tauri::Builder<tauri::Wry>) -> tauri::Builder
     // reqwest (update check, TURN credentials) uses rustls with no built-in provider: install ring once
     let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
     let hidden = std::env::args().any(|a| a == "--hidden");
+    if win::elevate::hand_off() {
+        return; // the elevated copy took over this launch's arguments
+    }
+    let elevated = win::elevate::is_elevated();
+    if elevated {
+        win::elevate::accept_handoff();
+    }
     extra(tauri::Builder::default())
-        .plugin(tauri_plugin_single_instance::init(|app, argv, _| {
+        .plugin(tauri_plugin_single_instance::init(move |app, argv, _| {
             // Explorer "Send to phone" starts a second instance with --send <path>.
+            if argv.iter().any(|a| a == "--hidden") {
+                return; // autostart handed over to an already-running copy
+            }
             if argv.iter().any(|a| a == "--pair-url") {
+                // elevated, any normal process can reach this callback: don't hand it a pairing link
+                if elevated {
+                    return;
+                }
                 // `pc-remote-host --pair-url` writes a fresh pairing link (for pairing without a camera)
                 let _ = std::fs::write(data_dir().join("pair-url.txt"), commands::pair_url(&app.state::<App>()));
                 return;
