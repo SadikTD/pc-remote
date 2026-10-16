@@ -1,0 +1,41 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "PC Remote Host",
+  "version": "1.0.0",
+  "identifier": "com.pcremote.host",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "publisher": "SadikTD",
+    "shortDescription": "Control this PC from your phone",
+    "copyright": "GPL-3.0",
+    "windows": {
+      "nsis": {
+        "installMode": "perMachine",
+        "installerHooks": "installer/hooks.nsh",
+        "installerIcon": "icons/icon.ico"
+      }
+    }
+  }
+}
