@@ -28,6 +28,8 @@ import kotlinx.coroutines.launch
  */
 class HomeController(ctx: Context, private val scope: CoroutineScope, val computers: Computers) {
     val store = PcStore.get(ctx)
+    /** Same-network discovery: a paired PC that turns up (or changes address) connects with no taps. */
+    private val lan = com.pcremote.discovery.Lan(ctx) { found -> scope.launch { onLan(found) } }
     private val paired = MutableStateFlow<List<PairedPc>>(emptyList())
     private val live = MutableStateFlow<Map<String, AgentState>>(emptyMap())
     private val streaming = MutableStateFlow<Map<String, Boolean>>(emptyMap())
@@ -44,8 +46,19 @@ class HomeController(ctx: Context, private val scope: CoroutineScope, val comput
 
     fun connection(id: String): AgentConnection? = conns[id]
 
+    private suspend fun onLan(found: com.pcremote.discovery.LanPc) {
+        val pc = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { store.all() }.firstOrNull { it.id == found.id } ?: return
+        val hosts = com.pcremote.discovery.Lan.prefer(found.host, pc.hosts) ?: return
+        val updated = pc.copy(hosts = hosts)
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { store.upsert(updated) }
+        paired.value = paired.value.map { if (it.id == pc.id) updated else it }
+        // reconnect at the new address unless already connected
+        if (live.value[pc.id] !is AgentState.Online && jobs.isNotEmpty()) { conns.remove(pc.id)?.close(); open(updated) }
+    }
+
     fun start() {
         computers.startPolling()
+        lan.start()
         // Keystore decryption happens off the main thread
         scope.launch {
             val pcs = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { store.all() }
@@ -86,6 +99,7 @@ class HomeController(ctx: Context, private val scope: CoroutineScope, val comput
 
     fun stop() {
         computers.stopPolling()
+        lan.stop()
         jobs.forEach { it.cancel() }; jobs.clear()
         conns.values.forEach { it.close() }; conns.clear()
         live.value = emptyMap()
