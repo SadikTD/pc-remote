@@ -1,7 +1,15 @@
 //! Virtual Xbox 360 controllers (ViGEmBus), one per phone pad id.
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+/// Controllers kept briefly after a phone disconnects, per device (with a generation stamp).
+#[derive(Clone, Default)]
+pub struct Lingering(Arc<Mutex<HashMap<String, Parked>>>);
+
+/// A disconnected phone's controllers and the generation that parked them.
+type Parked = (u64, Vec<Box<dyn Target>>);
 
 /// XInput state from a `pad` message.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -32,11 +40,20 @@ pub struct Pads {
     bus: Arc<dyn Bus>,
     on_rumble: Arc<dyn Fn(u8, u8, u8) + Send + Sync>,
     targets: [Option<Box<dyn Target>>; 4],
+    device: Option<(String, Lingering)>,
 }
 
 impl Pads {
     pub fn new(bus: Arc<dyn Bus>, on_rumble: Box<dyn Fn(u8, u8, u8) + Send + Sync>) -> Self {
-        Pads { bus, on_rumble: on_rumble.into(), targets: Default::default() }
+        Pads { bus, on_rumble: on_rumble.into(), targets: Default::default(), device: None }
+    }
+
+    /// Ties these controllers to a phone: its lingering controllers from a previous connection
+    /// are released now, so a game never sees two controllers for one phone.
+    pub fn for_device(mut self, device: &str, lingering: Lingering) -> Self {
+        drop(lingering.0.lock().unwrap().remove(device));
+        self.device = Some((device.to_string(), lingering));
+        self
     }
 
     /// Creates the controller on first use, then updates it.
@@ -62,12 +79,30 @@ impl Pads {
 
     /// After a disconnect, keeps the controllers for `d` so a game doesn't drop them on a blip.
     pub fn linger(&mut self, d: Duration) {
-        let targets = std::mem::take(&mut self.targets);
-        if targets.iter().any(Option::is_some) {
-            tokio::spawn(async move {
-                tokio::time::sleep(d).await;
-                drop(targets);
-            });
+        let targets: Vec<Box<dyn Target>> = std::mem::take(&mut self.targets).into_iter().flatten().collect();
+        if targets.is_empty() {
+            return;
+        }
+        match &self.device {
+            Some((dev, lingering)) => {
+                static GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+                let gen = GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                lingering.0.lock().unwrap().insert(dev.clone(), (gen, targets));
+                let (dev, lingering) = (dev.clone(), lingering.clone());
+                tokio::spawn(async move {
+                    tokio::time::sleep(d).await;
+                    let mut m = lingering.0.lock().unwrap();
+                    if m.get(&dev).is_some_and(|(g, _)| *g == gen) {
+                        m.remove(&dev);
+                    }
+                });
+            }
+            None => {
+                tokio::spawn(async move {
+                    tokio::time::sleep(d).await;
+                    drop(targets);
+                });
+            }
         }
     }
 }
@@ -184,6 +219,23 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(200)).await;
         let l = log.0.lock().unwrap();
         assert!(l.contains(&"unplug 0".to_string()) && l.contains(&"unplug 2".to_string()));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn reconnect_releases_lingering_before_new_plug() {
+        let log = Arc::new(Log::default());
+        let lingering = Lingering::default();
+        let bus: Arc<dyn Bus> = Arc::new(FakeBus(log.clone()));
+        let mut p1 = Pads::new(bus.clone(), Box::new(|_, _, _| {})).for_device("phone", lingering.clone());
+        p1.pad(0, &st(1)).unwrap();
+        p1.linger(Duration::from_secs(5));
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        // the same phone reconnects: its old controller goes away at once, so a game never sees two
+        let mut p2 = Pads::new(bus, Box::new(|_, _, _| {})).for_device("phone", lingering.clone());
+        assert!(log.0.lock().unwrap().contains(&"unplug 0".to_string()));
+        p2.pad(0, &st(1)).unwrap();
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        assert_eq!(log.0.lock().unwrap().iter().filter(|l| *l == "unplug 0").count(), 1);
     }
 
     #[test]

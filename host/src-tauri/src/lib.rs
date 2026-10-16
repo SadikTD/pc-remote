@@ -6,6 +6,7 @@ pub mod host;
 pub mod input;
 pub mod media;
 pub mod net;
+pub mod notify;
 pub mod pad;
 pub mod power;
 pub mod proto;
@@ -83,13 +84,18 @@ fn send_arg(argv: &[String]) -> Option<PathBuf> {
 }
 
 pub fn run() {
+    run_with(|b| b)
+}
+
+/// Like [run], letting the binary add plugins the library (and its tests) shouldn't link.
+pub fn run_with(extra: impl FnOnce(tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry>) {
     let dir = data_dir();
     if std::env::args().any(|a| a == "--init-sunshine") {
         // Run elevated by the installer (or by us on first launch): creates Sunshine credentials.
         std::process::exit(if sunshine::ensure_credentials(&dir).is_ok() { 0 } else { 1 });
     }
     let hidden = std::env::args().any(|a| a == "--hidden");
-    tauri::Builder::default()
+    extra(tauri::Builder::default())
         .plugin(tauri_plugin_single_instance::init(|app, argv, _| {
             // Explorer "Send to phone" starts a second instance with --send <path>.
             match send_arg(&argv) {

@@ -172,7 +172,10 @@ impl Incoming {
         }
         let dest = unique_path(&self.dir, &rx.name);
         match std::fs::rename(&rx.part, &dest) {
-            Ok(()) => ServerMsg::FileDone { id: id.into(), path: dest.to_string_lossy().into() },
+            Ok(()) => {
+                crate::notify::file_received(&dest);
+                ServerMsg::FileDone { id: id.into(), path: dest.to_string_lossy().into() }
+            }
             Err(_) => Self::error(id, "denied"),
         }
     }

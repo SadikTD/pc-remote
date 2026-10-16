@@ -15,13 +15,14 @@ pub struct Host {
     pub outgoing: Outgoing,
     /// None when the ViGEmBus driver isn't installed.
     pads: Option<Arc<dyn pad::Bus>>,
+    lingering: pad::Lingering,
     pub net: Arc<Mutex<net::NetStatus>>,
 }
 
 impl Host {
     pub fn new(store: Arc<Mutex<Store>>, sunshine: Arc<Sunshine>) -> Self {
         let pads = pad::ViGEm::connect().map(|b| Arc::new(b) as Arc<dyn pad::Bus>);
-        Host { store, sunshine, outgoing: Outgoing::default(), pads, net: Arc::default() }
+        Host { store, sunshine, outgoing: Outgoing::default(), pads, lingering: Default::default(), net: Arc::default() }
     }
 }
 
@@ -58,13 +59,14 @@ impl Handlers for Host {
         c
     }
 
-    fn session(&self, _device: &str, out: Outbox) -> Box<dyn Session> {
+    fn session(&self, device: &str, out: Outbox) -> Box<dyn Session> {
         let dir = self.store.lock().unwrap().config().files_dir.clone();
         let pads = self.pads.clone().map(|bus| {
             let out = out.clone();
             Pads::new(bus, Box::new(move |id, lo, hi| {
                 out.send(ServerMsg::Rumble { id, lo, hi });
             }))
+            .for_device(device, self.lingering.clone())
         });
         Box::new(HostSession {
             input: input::Input::new(input::SendInputEmitter),
