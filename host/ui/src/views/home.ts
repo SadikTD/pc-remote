@@ -23,6 +23,14 @@ export function home(state: State): HTMLElement {
     '<rect class="track" x="3" y="3" width="254" height="254" rx="30" pathLength="1"/>' +
     '<rect class="bar" x="3" y="3" width="254" height="254" rx="30" pathLength="1"/>';
 
+  let link = "";
+  const copy = h("button.ghost", {
+    onclick: async () => {
+      await navigator.clipboard.writeText(link);
+      copy.textContent = "Copied. Send it to your phone";
+      setTimeout(() => (copy.textContent = "Copy pairing link"), 2500);
+    },
+  }, "Copy pairing link");
   let timer = 0;
   let expires = 0;
   const tick = () => {
@@ -31,7 +39,9 @@ export function home(state: State): HTMLElement {
     if (s === 0) refresh();
   };
   const refresh = async () => {
-    qr.innerHTML = await invoke<string>("new_qr");
+    const code = await invoke<{ svg: string; link: string }>("new_qr");
+    qr.innerHTML = code.svg;
+    link = code.link;
     expires = Date.now() + TTL * 1000;
     const bar = ring.querySelector<SVGElement>(".bar")!;
     bar.style.animation = "none";
@@ -52,6 +62,7 @@ export function home(state: State): HTMLElement {
     h("div.code", {}, ring, qr),
     h("p.lead", {}, "Open PC Remote on your phone and scan this code."),
     left,
+    copy,
     connected.length
       ? h("ul.list.compact", {}, ...connected.map((d) => h("li.row", {}, h("i.dot.live"), h("span.grow", {}, d.name),
           h("button.ghost", { onclick: () => invoke("send_file", { device: d.id }) }, "Send file"))))

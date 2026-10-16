@@ -88,10 +88,17 @@ pub async fn get_state(app: State<'_, App>) -> Result<StateView, String> {
     Ok(StateView { name: crate::win::sys::pc_name(), sunshine, devices })
 }
 
+/// A fresh pairing code: the QR (SVG) and the same one-time link as text, for "Copy pairing link".
+#[derive(Serialize)]
+pub struct PairCode {
+    svg: String,
+    link: String,
+}
+
 #[tauri::command]
-pub fn new_qr(app: State<'_, App>) -> String {
-    let uri = pair_url(&app);
-    qrcode::QrCode::with_error_correction_level(uri, qrcode::EcLevel::M)
+pub fn new_qr(app: State<'_, App>) -> PairCode {
+    let link = pair_url(&app);
+    let svg = qrcode::QrCode::with_error_correction_level(&link, qrcode::EcLevel::M)
         .map(|q| {
             q.render::<qrcode::render::svg::Color>()
                 .quiet_zone(false)
@@ -99,7 +106,8 @@ pub fn new_qr(app: State<'_, App>) -> String {
                 .light_color(qrcode::render::svg::Color("#FFFFFF"))
                 .build()
         })
-        .unwrap_or_default()
+        .unwrap_or_default();
+    PairCode { svg, link }
 }
 
 /// A fresh one-time pairing link (what the QR code encodes).
