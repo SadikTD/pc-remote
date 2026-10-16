@@ -155,7 +155,8 @@ class MainActivity : ComponentActivity() {
                                         if (m != null) openMode(card.moonlightUuid, m) else manualPairing()
                                     }
                                     PrimaryAction.WAKE -> wake(home.wolTarget(card))
-                                    PrimaryAction.PAIR -> manualPairing()
+                                    // A PC found on the network but not paired yet: pair by scanning its code
+                                    PrimaryAction.PAIR -> scanQr(this@MainActivity, onUnavailable = ::manualPairing) { raw -> scope.launch { pairing.onScanned(raw) } }
                                     PrimaryAction.OFFLINE_HELP -> startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(SETUP_GUIDE_URL)))
                                     PrimaryAction.CHECKING -> Unit
                                 }

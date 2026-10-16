@@ -26,24 +26,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.google.mlkit.vision.barcode.common.Barcode
-import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
-import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import com.limelight.R
 import com.pcremote.ui.components.*
 import com.pcremote.ui.theme.LocalMidnight
 import kotlinx.coroutines.launch
 
-/** Opens the Play-services QR scanner (no camera permission, no bundled model). */
+/** Opens our camera scanner. [onUnavailable] runs if there's no activity to start it from. */
 fun scanQr(ctx: android.content.Context, onUnavailable: () -> Unit = {}, onResult: (String) -> Unit) {
-    val opts = GmsBarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).enableAutoZoom().build()
-    GmsBarcodeScanning.getClient(ctx, opts).startScan()
-        .addOnSuccessListener { b -> b.rawValue?.let(onResult) }
-        .addOnFailureListener {
-            // No Play services scanner (or it's still downloading): explain and offer manual pairing
-            android.widget.Toast.makeText(ctx, R.string.pcr_scanner_unavailable, android.widget.Toast.LENGTH_LONG).show()
-            onUnavailable()
-        }
+    val activity = ctx as? android.app.Activity ?: return onUnavailable()
+    com.pcremote.scan.QrScan.start(activity, onResult)
 }
 
 @Composable

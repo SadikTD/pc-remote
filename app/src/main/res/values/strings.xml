@@ -484,4 +484,7 @@
     <string name="pcr_pad_no_gyro">No gyroscope: aiming layouts are hidden</string>
     <string name="pcr_click_left">Left click</string>
     <string name="pcr_click_right">Right click</string>
+    <string name="pcr_scan_hint">Point at the code on your PC</string>
+    <string name="pcr_scan_need_camera">PC Remote needs the camera to scan the pairing code on your PC.</string>
+    <string name="pcr_scan_allow">Allow camera</string>
 </resources>

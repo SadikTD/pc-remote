@@ -6,6 +6,8 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-permission android:name="android.permission.CAPTURE_KEYBOARD" />
     <uses-permission android:name="com.android.providers.tv.permission.READ_EPG_DATA"/>
     <uses-permission android:name="com.android.providers.tv.permission.WRITE_EPG_DATA"/>
@@ -100,6 +102,11 @@
         <!-- Home-screen shortcuts pinned with older versions still open the app -->
         <activity-alias android:name="com.limelight.PcView" android:targetActivity="com.pcremote.MainActivity" android:exported="true" />
         <activity-alias android:name="com.limelight.ShortcutTrampoline" android:targetActivity="com.pcremote.MainActivity" android:exported="true" />
+        <activity
+            android:name="com.pcremote.scan.ScanActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:theme="@android:style/Theme.Material.NoActionBar" />
         <activity
             android:name="com.pcremote.modes.ShareToPcActivity"
             android:exported="true"
