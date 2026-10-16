@@ -18,8 +18,8 @@ Control your Windows PC from your Android phone, at home or from anywhere. You c
 
 From [Releases](https://github.com/SadikTD/pc-remote/releases/latest):
 
-- **Windows:** `PC-Remote-Host-2.0.0-setup.exe`. Install it, and it shows a QR code. The only extra piece it installs is the virtual gamepad driver (ViGEmBus).
-- **Android:** `PC-Remote-2.0.0.apk`.
+- **Windows:** `PC-Remote-Host-2.0.1-setup.exe`. Install it, and it shows a QR code. The only extra piece it installs is the virtual gamepad driver (ViGEmBus).
+- **Android:** `PC-Remote-2.0.1.apk`.
 
 Open PC Remote on the phone and scan the code, with the app or any camera app. If the phone can't scan, use **Copy pairing link** on the PC, send the link to the phone, and choose **Paste a pairing link** in the app.
 
