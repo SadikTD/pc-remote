@@ -30,6 +30,9 @@ pub struct Params {
     pub audio: bool,
 }
 
+/// The UDP port streams use when it's free (mapped on the router by `net`).
+pub const STREAM_PORT: u16 = 47998;
+
 /// Pushes an agent message to the phone (`cursor.shape`, a new `stream.ready`).
 pub type Notify = Arc<dyn Fn(ServerMsg) + Send + Sync>;
 /// Applies one deduplicated input event.
@@ -324,7 +327,10 @@ impl StreamSession {
         if active.upgrade().is_some_and(|s| !s.stopped()) {
             return Err(err("busy", "another phone is streaming from this PC"));
         }
-        let sock = UdpSocket::bind((bind, 0)).map_err(|e| err("capture_failed", &e.to_string()))?;
+        // The fixed port is the one UPnP maps for access from anywhere; any port works on the LAN.
+        let sock = UdpSocket::bind((bind, STREAM_PORT))
+            .or_else(|_| UdpSocket::bind((bind, 0)))
+            .map_err(|e| err("capture_failed", &e.to_string()))?;
         let port = sock.local_addr().map_err(|e| err("capture_failed", &e.to_string()))?.port();
         let key: [u8; 32] = crate::store::random();
         let session = u32::from_be_bytes(crate::store::random());

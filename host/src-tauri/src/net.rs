@@ -1,8 +1,8 @@
-//! Access from anywhere: a UPnP port mapping for the agent and the public address.
-//! (Sunshine maps its own streaming ports when its `upnp` setting is on.)
+//! Access from anywhere: UPnP port mappings for the agent (TCP) and the stream (UDP), and the public address.
 
 use crate::agent::BoxFut;
 use crate::commands::PORT;
+use crate::engine::session::STREAM_PORT;
 use igd_next::aio::tokio::Tokio;
 use igd_next::aio::Gateway;
 use igd_next::{PortMappingProtocol, SearchOptions};
@@ -19,28 +19,48 @@ pub struct NetStatus {
     pub manual: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Proto {
+    Tcp,
+    Udp,
+}
+
+impl Proto {
+    fn igd(self) -> PortMappingProtocol {
+        match self {
+            Proto::Tcp => PortMappingProtocol::TCP,
+            Proto::Udp => PortMappingProtocol::UDP,
+        }
+    }
+}
+
 pub trait Router: Sync {
-    fn map(&self, port: u16, local: SocketAddrV4) -> BoxFut<Result<(), String>>;
-    fn unmap(&self, port: u16) -> BoxFut<Result<(), String>>;
+    fn map(&self, proto: Proto, port: u16, local: SocketAddrV4) -> BoxFut<Result<(), String>>;
+    fn unmap(&self, proto: Proto, port: u16) -> BoxFut<Result<(), String>>;
     fn external_ip(&self) -> BoxFut<Option<IpAddr>>;
     /// This PC's address on the router's network.
     fn local_ip(&self) -> Option<Ipv4Addr>;
 }
 
-/// Maps (or unmaps) the agent port and reports the outcome.
+/// Maps (or unmaps) the agent port and the stream port and reports the outcome. The agent mapping
+/// decides success; without the UDP one, remote streams fall back to hole punching or the relay.
 pub async fn apply<R: Router>(enabled: bool, router: Result<&R, String>) -> NetStatus {
     let manual = NetStatus { manual: true, ..Default::default() };
     match (enabled, router) {
         (false, Ok(r)) => {
-            let _ = r.unmap(PORT).await;
+            let _ = r.unmap(Proto::Tcp, PORT).await;
+            let _ = r.unmap(Proto::Udp, STREAM_PORT).await;
             NetStatus::default()
         }
         (false, Err(_)) => NetStatus::default(),
         (true, Err(_)) => manual,
         (true, Ok(r)) => {
             let Some(ip) = r.local_ip() else { return manual };
-            if r.map(PORT, SocketAddrV4::new(ip, PORT)).await.is_err() {
+            if r.map(Proto::Tcp, PORT, SocketAddrV4::new(ip, PORT)).await.is_err() {
                 return manual;
+            }
+            if let Err(e) = r.map(Proto::Udp, STREAM_PORT, SocketAddrV4::new(ip, STREAM_PORT)).await {
+                crate::log::line(&format!("net: UDP {STREAM_PORT} mapping refused: {e}"));
             }
             NetStatus { upnp: true, public: r.external_ip().await.map(|i| i.to_string()), manual: false }
         }
@@ -59,11 +79,11 @@ impl Igd {
 }
 
 impl Router for Igd {
-    fn map(&self, port: u16, local: SocketAddrV4) -> BoxFut<Result<(), String>> {
+    fn map(&self, proto: Proto, port: u16, local: SocketAddrV4) -> BoxFut<Result<(), String>> {
         let g = self.0.clone();
         Box::pin(async move {
             // Lease 0 = permanent; some routers only accept a finite lease.
-            let add = |lease| g.add_port(PortMappingProtocol::TCP, port, SocketAddr::V4(local), lease, "PC Remote");
+            let add = |lease| g.add_port(proto.igd(), port, SocketAddr::V4(local), lease, "PC Remote");
             match add(0).await {
                 Ok(()) => Ok(()),
                 Err(_) => add(7 * 24 * 3600).await.map_err(|e| e.to_string()),
@@ -71,9 +91,9 @@ impl Router for Igd {
         })
     }
 
-    fn unmap(&self, port: u16) -> BoxFut<Result<(), String>> {
+    fn unmap(&self, proto: Proto, port: u16) -> BoxFut<Result<(), String>> {
         let g = self.0.clone();
-        Box::pin(async move { g.remove_port(PortMappingProtocol::TCP, port).await.map_err(|e| e.to_string()) })
+        Box::pin(async move { g.remove_port(proto.igd(), port).await.map_err(|e| e.to_string()) })
     }
 
     fn external_ip(&self) -> BoxFut<Option<IpAddr>> {
@@ -117,13 +137,13 @@ mod tests {
     }
 
     impl Router for FakeRouter {
-        fn map(&self, port: u16, local: SocketAddrV4) -> BoxFut<Result<(), String>> {
-            self.calls.lock().unwrap().push(format!("map {port} {local}"));
+        fn map(&self, proto: Proto, port: u16, local: SocketAddrV4) -> BoxFut<Result<(), String>> {
+            self.calls.lock().unwrap().push(format!("map {proto:?} {port} {local}"));
             let r = if self.refuse { Err("conflict".to_string()) } else { Ok(()) };
             Box::pin(async move { r })
         }
-        fn unmap(&self, port: u16) -> BoxFut<Result<(), String>> {
-            self.calls.lock().unwrap().push(format!("unmap {port}"));
+        fn unmap(&self, proto: Proto, port: u16) -> BoxFut<Result<(), String>> {
+            self.calls.lock().unwrap().push(format!("unmap {proto:?} {port}"));
             Box::pin(async { Ok(()) })
         }
         fn external_ip(&self) -> BoxFut<Option<IpAddr>> {
@@ -152,7 +172,7 @@ mod tests {
         let r = FakeRouter::default();
         let s = apply(true, Ok(&r)).await;
         assert_eq!(s, NetStatus { upnp: true, public: Some("203.0.113.7".into()), manual: false });
-        assert_eq!(*r.calls.lock().unwrap(), ["map 47999 192.168.0.126:47999"]);
+        assert_eq!(*r.calls.lock().unwrap(), ["map Tcp 47999 192.168.0.126:47999", "map Udp 47998 192.168.0.126:47998"]);
     }
 
     #[tokio::test]
@@ -160,7 +180,7 @@ mod tests {
         let r = FakeRouter::default();
         let s = apply(false, Ok(&r)).await;
         assert_eq!(s, NetStatus::default());
-        assert_eq!(*r.calls.lock().unwrap(), ["unmap 47999"]);
+        assert_eq!(*r.calls.lock().unwrap(), ["unmap Tcp 47999", "unmap Udp 47998"]);
         assert_eq!(apply(false, Err::<&FakeRouter, _>("none".into())).await, NetStatus::default());
     }
 

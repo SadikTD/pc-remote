@@ -21,7 +21,7 @@ All integers are big-endian.
 - `stream.ready` field rules:
   - `session` is a random u32.
   - `key` is a fresh random AES-256 key for this session only. It travels over TLS and nowhere else.
-  - `port` is the host's UDP port for this session (the agent advertises `stream` in `caps`).
+  - `port` is the host's UDP port for this session: 47998 when free (the port UPnP maps for access from anywhere), otherwise any. The agent advertises `stream` in `caps`.
 - `cursor.shape` is sent whenever the pointer shape changes: a PNG with a premultiplied-alpha source. `hx`/`hy` is the hotspot in pixels.
 - `stream.stop`, or closing the agent connection, ends the session. The host also ends it after 5 s without any packet from the phone.
 
