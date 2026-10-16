@@ -6,6 +6,7 @@ use crate::store::Store;
 use crate::sunshine::{self, Sunshine};
 use crate::files::{self, Incoming, Outgoing};
 use crate::pad::{self, Pads};
+use crate::engine::session::{Params, StreamSession};
 use crate::{clip, commands, input, media, net, power, thumb, win};
 use std::sync::{Arc, Mutex};
 
@@ -52,7 +53,7 @@ impl Handlers for Host {
     }
 
     fn caps(&self) -> Vec<String> {
-        let mut c: Vec<String> = ["input", "power", "media", "files", "clip", "thumb", "net"].map(String::from).to_vec();
+        let mut c: Vec<String> = ["input", "power", "media", "files", "clip", "thumb", "net", "stream"].map(String::from).to_vec();
         if self.pads.is_some() {
             c.push("pad".into());
         }
@@ -77,9 +78,10 @@ impl Handlers for Host {
             outgoing: self.outgoing.clone(),
             clip: None,
             sid: u64::from_le_bytes(crate::store::random::<8>()),
-            pads,
+            pads: Arc::new(Mutex::new(pads)),
             thumb: None,
             net: self.net.clone(),
+            stream: None,
         })
     }
 }
@@ -94,14 +96,37 @@ pub struct HostSession {
     clip: Option<tokio::task::JoinHandle<()>>,
     /// Tags this phone's clipboard writes so they are not echoed back to it.
     sid: u64,
-    pads: Option<Pads>,
+    /// Shared with the stream's input thread (PRS INPUT carries `pad` too).
+    pads: Arc<Mutex<Option<Pads>>>,
     thumb: Option<tokio::task::JoinHandle<()>>,
     net: Arc<Mutex<net::NetStatus>>,
+    stream: Option<StreamSession>,
 }
 
 impl HostSession {
     fn allow_clip(&self) -> bool {
         self.store.lock().unwrap().config().allow_clip
+    }
+
+    /// Input arriving over PRS: the same handling as the agent's, on the stream's thread.
+    fn stream_input(&self) -> crate::engine::session::InputSink {
+        let pads = self.pads.clone();
+        let mut inp = input::Input::new(input::SendInputEmitter);
+        Box::new(move |m| match m {
+            ClientMsg::Pad { id, btn, lt, rt, lx, ly, rx, ry } => {
+                if let Some(p) = pads.lock().unwrap().as_mut() {
+                    let _ = p.pad(id, &pad::PadState { btn, lt, rt, lx, ly, rx, ry });
+                }
+            }
+            ClientMsg::PadOff { id } => {
+                if let Some(p) = pads.lock().unwrap().as_mut() {
+                    p.off(id);
+                }
+            }
+            m => {
+                let _ = inp.handle(&m);
+            }
+        })
     }
 }
 
@@ -120,7 +145,7 @@ impl Drop for HostSession {
         toggle(&mut self.media, false, || unreachable!());
         toggle(&mut self.clip, false, || unreachable!());
         toggle(&mut self.thumb, false, || unreachable!());
-        if let Some(p) = self.pads.as_mut() {
+        if let Some(p) = self.pads.lock().unwrap().as_mut() {
             p.linger(std::time::Duration::from_secs(5));
         }
     }
@@ -139,6 +164,7 @@ impl Session for HostSession {
             | ClientMsg::MouseButton { .. }
             | ClientMsg::MouseScroll { .. }
             | ClientMsg::Key { .. }
+            | ClientMsg::MousePos { .. }
             | ClientMsg::Text { .. } => self.input.handle(&m).err().and_then(|c| err(c, "invalid input")),
             ClientMsg::Power { a } => match power::power(&a) {
                 Ok(()) => Some(ServerMsg::Ok { of: of.into() }),
@@ -171,13 +197,34 @@ impl Session for HostSession {
                 None
             }
             ClientMsg::Pad { id, btn, lt, rt, lx, ly, rx, ry } => {
-                let Some(p) = self.pads.as_mut() else { return err("unsupported", "gamepad driver (ViGEmBus) is not installed") };
+                let mut pads = self.pads.lock().unwrap();
+                let Some(p) = pads.as_mut() else { return err("unsupported", "gamepad driver (ViGEmBus) is not installed") };
                 p.pad(id, &pad::PadState { btn, lt, rt, lx, ly, rx, ry }).err().and_then(|c| err(c, "gamepad error"))
             }
             ClientMsg::PadOff { id } => {
-                if let Some(p) = self.pads.as_mut() {
+                if let Some(p) = self.pads.lock().unwrap().as_mut() {
                     p.off(id);
                 }
+                None
+            }
+            ClientMsg::StreamStart { w, h, fps, codecs, max_kbps, audio } => {
+                self.stream = None; // a restart from this phone replaces its stream
+                let p = Params { w, h, fps: if fps == 0 { 60 } else { fps }, codecs, max_kbps: if max_kbps == 0 { 20000 } else { max_kbps }, audio };
+                let out = self.out.clone();
+                let notify: crate::engine::session::Notify = Arc::new(move |m| {
+                    out.send(m);
+                });
+                let bind = std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED);
+                match StreamSession::start(p, bind, notify, self.stream_input()) {
+                    Ok((ready, s)) => {
+                        self.stream = Some(s);
+                        Some(ready)
+                    }
+                    Err(e) => Some(e),
+                }
+            }
+            ClientMsg::StreamStop => {
+                self.stream = None;
                 None
             }
             ClientMsg::ClipSub { on } => {

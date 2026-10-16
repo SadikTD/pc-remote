@@ -30,6 +30,8 @@
   ; Phones reach the agent on TCP 47999 (TLS, token-authenticated).
   nsExec::Exec 'netsh advfirewall firewall delete rule name="${PCR_FW_RULE}"'
   nsExec::Exec 'netsh advfirewall firewall add rule name="${PCR_FW_RULE}" dir=in action=allow protocol=TCP localport=47999 program="$INSTDIR\pc-remote-host.exe" profile=any'
+  ; PRS streams: one random UDP port per stream session
+  nsExec::Exec 'netsh advfirewall firewall add rule name="${PCR_FW_RULE}" dir=in action=allow protocol=UDP program="$INSTDIR\pc-remote-host.exe" profile=any'
 
   ; Let the (non-elevated) tray app start/stop Sunshine when it needs recovering:
   ; the default service DACL plus start/stop (RP/WP) for interactive users.

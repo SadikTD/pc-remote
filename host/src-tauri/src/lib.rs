@@ -1,10 +1,12 @@
 pub mod agent;
 pub mod clip;
 pub mod commands;
+pub mod engine;
 pub mod files;
 pub mod host;
 pub mod input;
 pub mod log;
+pub mod mdns;
 pub mod media;
 pub mod net;
 pub mod notify;
@@ -36,6 +38,8 @@ pub struct App {
     pub fp: String,
     pub outgoing: files::Outgoing,
     pub net: Arc<Mutex<net::NetStatus>>,
+    /// LAN discovery, withdrawn when the app quits.
+    pub mdns: Mutex<Option<mdns::Advert>>,
 }
 
 pub fn data_dir() -> PathBuf {
@@ -162,7 +166,9 @@ pub fn run_with(extra: impl FnOnce(tauri::Builder<tauri::Wry>) -> tauri::Builder
                 Duration::from_secs(30),
             ))?;
             let mut events = agent.events();
-            app.manage(App { store, agent: agent.clone(), sunshine: sun, fp: identity.fingerprint_hex.clone(), outgoing, net });
+            let advert = mdns::Advert::start(store.lock().unwrap().pc_id(), &win::sys::pc_name());
+            let mdns = Mutex::new(advert);
+            app.manage(App { store, agent: agent.clone(), sunshine: sun, fp: identity.fingerprint_hex.clone(), outgoing, net, mdns });
 
             let open = MenuItem::with_id(app, "open", "Open", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
@@ -203,10 +209,10 @@ pub fn run_with(extra: impl FnOnce(tauri::Builder<tauri::Wry>) -> tauri::Builder
         })
         .build(tauri::generate_context!())
         .expect("tauri app")
-        .run(|_, e| {
+        .run(|app, e| match e {
             // Closing the window destroys the webview; the tray process lives on.
-            if let RunEvent::ExitRequested { code: None, api, .. } = e {
-                api.prevent_exit();
-            }
+            RunEvent::ExitRequested { code: None, api, .. } => api.prevent_exit(),
+            RunEvent::Exit => drop(app.state::<App>().mdns.lock().unwrap().take()),
+            _ => {}
         });
 }
