@@ -40,6 +40,8 @@ class StreamController(
     private val pipelines: (ready: Msg.StreamReady, onDecoderFailed: () -> Unit) -> Pipeline,
     private var codecs: List<String>,
     private val timeoutMs: Long = 8_000,
+    /** Called before every `stream.start`: opens a fresh socket and returns its candidates. */
+    private val prepare: suspend () -> List<String> = { emptyList() },
 ) {
     private val _ui = MutableStateFlow<StreamUi>(StreamUi.Connecting)
     val ui: StateFlow<StreamUi> = _ui
@@ -62,8 +64,9 @@ class StreamController(
         // the agent may still be (re)connecting: keep asking until it answers or we time out
         timeout?.cancel()
         timeout = scope.launch {
+            val cands = prepare()
             repeat(maxOf(1, (timeoutMs / ASK_EVERY_MS).toInt())) {
-                send(Msg.StreamStart(r.w, r.h, r.fps, codecs, r.maxKbps, r.audio))
+                send(Msg.StreamStart(r.w, r.h, r.fps, codecs, r.maxKbps, r.audio, cands))
                 delay(ASK_EVERY_MS)
                 if (session != null) return@launch
             }

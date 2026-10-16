@@ -64,10 +64,14 @@ sealed interface Msg {
     @Serializable @SerialName("mouse.pos") data class MousePos(val x: Float, val y: Float) : Msg
     @Serializable @SerialName("stream.start") data class StreamStart(
         val w: Int, val h: Int, val fps: Int, val codecs: List<String>, val maxKbps: Int, val audio: Boolean = true,
+        val cands: List<String> = emptyList(),
     ) : Msg
     @Serializable @SerialName("stream.ready") data class StreamReady(
         val codec: String, val w: Int, val h: Int, val fps: Int, val port: Int, val session: Long, val key: String,
+        val cands: List<String> = emptyList(),
     ) : Msg
+    @Serializable @SerialName("stream.cand") data class StreamCand(val c: String) : Msg
+    @Serializable @SerialName("remote") data class Remote(val url: String, val dev: String, val ticket: String) : Msg
     @Serializable @SerialName("stream.stop") data object StreamStop : Msg
     @Serializable @SerialName("stream.error") data class StreamError(val code: String, val msg: String = "") : Msg
     @Serializable @SerialName("cursor.shape") data class CursorShape(val png: String, val hx: Int, val hy: Int) : Msg

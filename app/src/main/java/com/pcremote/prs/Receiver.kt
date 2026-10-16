@@ -3,39 +3,16 @@ package com.pcremote.prs
 import com.pcremote.agent.Msg
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import java.net.DatagramPacket
-import java.net.DatagramSocket
-import java.net.InetAddress
-import java.net.InetSocketAddress
-import java.net.SocketTimeoutException
 import java.nio.ByteBuffer
 
-/** Where PRS datagrams go: plain UDP now, a TURN relay later. */
+/** Where PRS datagrams go (see [com.pcremote.remote.PeerSocket]). */
 interface Transport {
     fun send(b: ByteArray)
     /** Bytes received into `buf`, or -1 on timeout. */
     fun receive(buf: ByteArray, timeoutMs: Int): Int
+    /** The packet just received authenticated: its source is the peer. */
+    fun confirm() {}
     fun close()
-}
-
-/** Resolves `host` on first use, so it can be built on the main thread. */
-class UdpTransport(private val host: String, private val port: Int) : Transport {
-    private val peer by lazy { InetSocketAddress(InetAddress.getByName(host), port) }
-    private val sock = DatagramSocket().apply { receiveBufferSize = 4 shl 20 }
-    private val pkt = DatagramPacket(ByteArray(0), 0)
-
-    override fun send(b: ByteArray) { runCatching { sock.send(DatagramPacket(b, b.size, peer)) } }
-
-    override fun receive(buf: ByteArray, timeoutMs: Int): Int {
-        sock.soTimeout = maxOf(1, timeoutMs)
-        pkt.setData(buf)
-        while (true) {
-            try { sock.receive(pkt) } catch (_: SocketTimeoutException) { return -1 }
-            if (pkt.address == peer.address && pkt.port == peer.port) return pkt.length
-        }
-    }
-
-    override fun close() = sock.close()
 }
 
 data class AudioPacket(val id: Int, val captureUs: Long, val opus: ByteArray)
@@ -129,6 +106,7 @@ class Receiver(
 
     internal fun onPacket(buf: ByteArray, len: Int, nowUs: Long) {
         val (h, plain) = crypt.open(Crypt.HOST_TO_PHONE, buf, len) ?: return
+        transport.confirm()
         if (maxSeq < 0) { maxSeq = h.seq; periodStartSeq = h.seq - 1 }
         if (h.seq - maxSeq > 0) maxSeq = h.seq
         periodReceived++

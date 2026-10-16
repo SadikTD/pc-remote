@@ -81,11 +81,20 @@ fun StreamScreen(pcId: String, onBack: () -> Unit) {
     var pipe by remember { mutableStateOf<PrsPipeline?>(null) }
     var attempt by remember { mutableIntStateOf(0) }
 
+    // one socket per stream.start: STUN runs on it before asking, so its candidates go in the request
+    val nextSock = remember { java.util.concurrent.atomic.AtomicReference<com.pcremote.remote.PeerSocket?>() }
     val controller = remember(attempt) {
         StreamController(scope, session::send, session.conn.incoming, { ready, failed ->
-            PrsPipeline(ready, session.conn.connectedHost ?: session.pc.allHosts.first(), surface!!.surface, failed,
-                onEnded = { scope.launch { onBack() } }).also { pipe = it }
-        }, CodecPicker.supported())
+            val sock = nextSock.getAndSet(null) ?: com.pcremote.remote.PeerSocket()
+            PrsPipeline(ready, session.conn.connectedHost ?: session.pc.allHosts.first(), sock, surface!!.surface, session.pc.relay,
+                { m -> session.send(m) }, failed, onEnded = { scope.launch { onBack() } }).also { pipe = it }
+        }, CodecPicker.supported(), prepare = {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val s = com.pcremote.remote.PeerSocket(com.pcremote.remote.PeerSocket.CLOUDFLARE_STUN)
+                nextSock.getAndSet(s)?.close()
+                s.candidates()
+            }
+        })
     }
     val ui by controller.ui.collectAsState()
 
@@ -93,7 +102,7 @@ fun StreamScreen(pcId: String, onBack: () -> Unit) {
     val ready = agent is AgentState.Online && surface != null
     DisposableEffect(controller, ready) {
         if (ready) controller.start(request(ctx))
-        onDispose { controller.stop(); pipe = null }
+        onDispose { controller.stop(); pipe = null; nextSock.getAndSet(null)?.close() }
     }
     LaunchedEffect(session) {
         session.conn.incoming.collect { m ->

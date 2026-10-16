@@ -68,7 +68,7 @@ class HomeController(ctx: Context, private val scope: CoroutineScope, val comput
     }
 
     private fun open(pc: PairedPc) {
-        val c = AgentConnection(pc.allHosts, pc.port, pc.fingerprint, scope)
+        val c = AgentConnection.forPc(pc, scope)
         conns[pc.id] = c
         jobs += scope.launch {
             c.state.collect { st ->
@@ -81,6 +81,12 @@ class HomeController(ctx: Context, private val scope: CoroutineScope, val comput
             c.incoming.collect { m ->
                 if (m is Msg.Status) streaming.value = streaming.value + (pc.id to m.streaming)
                 if (m is Msg.FileOffer) c.send(Msg.FileReject(m.id)) // files are received on the Files screen
+                if (m is Msg.Remote) com.pcremote.agent.RelayInfo.b64url(m.ticket)?.let { t ->
+                    val relay = com.pcremote.agent.RelayInfo(m.url, pc.id, m.dev, t)
+                    val cur = store.all().firstOrNull { it.id == pc.id }
+                    val same = cur?.relay?.let { it.url == relay.url && it.dev == relay.dev && it.ticket contentEquals t } == true
+                    if (cur != null && !same) store.upsert(cur.copy(relay = relay))
+                }
                 if (m is Msg.Net) {
                     val pub = m.public?.takeIf { m.anywhere } // only remember it while access from anywhere is on
                     store.all().firstOrNull { it.id == pc.id }?.takeIf { it.publicHost != pub }?.let { store.upsert(it.copy(publicHost = pub)) }

@@ -42,7 +42,7 @@ fun rememberAgentSession(pcId: String, acceptsFiles: Boolean = false): AgentSess
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val pc = remember(pcId) { PcStore.get(ctx).all().firstOrNull { it.id == pcId } } ?: return null
-    val session = remember(pcId) { AgentSession(pc, AgentConnection(pc.allHosts, pc.port, pc.fingerprint, scope)) }
+    val session = remember(pcId) { AgentSession(pc, AgentConnection.forPc(pc, scope)) }
     DisposableEffect(session) {
         scope.launch { session.conn.hello(pc.token, Build.MODEL) }
         // Only the Files screen takes files; elsewhere a PC→phone offer gets a clear "no"

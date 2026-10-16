@@ -131,7 +131,7 @@ class AgentConnection(
             val id = ++session
             val opened = CompletableDeferred<Open>()
             val s = factory.open(h, port, fingerprint, listenerFor(id, opened))
-            val result = withTimeoutOrNull(2_000) { opened.await() } ?: run {
+            val result = withTimeoutOrNull(if (h == RELAY_HOST) 8_000 else 2_000) { opened.await() } ?: run {
                 opened.complete(Open.REFUSED) // a late onOpen for this attempt is ignored
                 Open.REFUSED
             }
@@ -295,9 +295,12 @@ class AgentConnection(
         s?.close()
     }
 
-    private companion object {
-        val BACKOFF_MS = longArrayOf(1_000, 2_000, 5_000, 10_000)
-        const val PING_MS = 10_000L
-        const val HANDSHAKE_TIMEOUT_MS = 5_000L
+    companion object {
+        /** A connection to a paired PC: its LAN/public hosts, then the rendezvous relay. */
+        fun forPc(pc: PairedPc, scope: CoroutineScope) = AgentConnection(pc.allHosts, pc.port, pc.fingerprint, scope, RoutingWs(pc.relay))
+
+        private val BACKOFF_MS = longArrayOf(1_000, 2_000, 5_000, 10_000)
+        private const val PING_MS = 10_000L
+        private const val HANDSHAKE_TIMEOUT_MS = 8_000L
     }
 }
