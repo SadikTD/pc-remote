@@ -21,9 +21,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.limelight.BuildConfig
-import com.limelight.R
-import com.limelight.preferences.StreamSettings
+import com.pcremote.BuildConfig
+import com.pcremote.R
 import com.pcremote.quality.QualityPreset
 import com.pcremote.quality.QualityPrefs
 import com.pcremote.ui.theme.LocalMidnight
@@ -82,10 +81,6 @@ fun SettingsScreen(model: SettingsModel, onBack: () -> Unit, onThemeChanged: () 
                     Spacer(Modifier.width(12.dp))
                     Text(stringResource(label), color = if (auto) c.textDim else c.text, style = MaterialTheme.typography.bodyLarge)
                 }
-            }
-            LinkRow(Icons.Rounded.Tune, R.string.pcr_advanced, R.string.pcr_advanced_desc) {
-                auto = false; QualityPrefs.setAuto(ctx, false)
-                ctx.startActivity(Intent(ctx, StreamSettings::class.java))
             }
         }
 

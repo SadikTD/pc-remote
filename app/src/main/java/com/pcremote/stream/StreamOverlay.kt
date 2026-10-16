@@ -27,7 +27,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.limelight.R
+import com.pcremote.R
 import com.pcremote.ui.components.GhostButton
 import com.pcremote.ui.components.PrimaryButton
 import com.pcremote.ui.components.StatusDot

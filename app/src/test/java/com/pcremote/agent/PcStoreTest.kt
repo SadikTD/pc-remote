@@ -19,8 +19,8 @@ class PcStoreTest {
         override fun open(sealed: String) = sealed.drop(1).map { it - 1 }.joinToString("").reversed()
     }
 
-    private fun pc(id: String, token: String = "secret-token-$id", uuid: String? = null) =
-        PairedPc(id, "PC $id", listOf("192.168.0.2"), 47999, "f".repeat(64), token, uuid, listOf("AA:BB"))
+    private fun pc(id: String, token: String = "secret-token-$id") =
+        PairedPc(id, "PC $id", listOf("192.168.0.2"), 47999, "f".repeat(64), token, listOf("AA:BB"))
 
     @Test fun `upsert adds and replaces by id`() {
         val s = PcStore(MemKv(), FakeBox)
@@ -42,11 +42,15 @@ class PcStoreTest {
         assertEquals("secret-token-a", PcStore(kv, FakeBox).all().single().token)
     }
 
-    @Test fun `lookup by moonlight uuid`() {
-        val s = PcStore(MemKv(), FakeBox)
-        s.upsert(pc("a", uuid = "U1"))
-        assertEquals("a", s.byMoonlightUuid("U1")?.id)
-        assertNull(s.byMoonlightUuid("U2"))
+    @Test fun `relay ticket is stored sealed and read back`() {
+        val kv = MemKv()
+        val r = RelayInfo("wss://w.example", "a", "dev1", ByteArray(32) { 7 })
+        PcStore(kv, FakeBox).upsert(pc("a").copy(relay = r))
+        val back = PcStore(kv, FakeBox).all().single()
+        assertEquals(RELAY_HOST, back.allHosts.last())
+        assertTrue(back.relay!!.ticket contentEquals r.ticket)
+        assertFalse(kv.map.values.any { it.contains(RelayInfo.b64url(r.ticket)) })
+        assertNull(PcStore(kv, FakeBox).all().single().publicHost)
     }
 
     @Test fun `corrupt data reads as empty`() {

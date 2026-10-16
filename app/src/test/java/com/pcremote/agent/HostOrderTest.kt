@@ -18,7 +18,7 @@ class HostOrderTest {
         }
         val box = object : SecretBox { override fun seal(plain: String) = plain.reversed(); override fun open(sealed: String) = sealed.reversed() }
         val s = PcStore(kv, box)
-        s.upsert(PairedPc("a", "A", listOf("192.168.0.2"), 47999, "f".repeat(64), "t", null, emptyList(), publicHost = "203.0.113.7"))
+        s.upsert(PairedPc("a", "A", listOf("192.168.0.2"), 47999, "f".repeat(64), "t", emptyList(), publicHost = "203.0.113.7"))
         assertEquals("203.0.113.7", s.all().single().publicHost)
     }
 }

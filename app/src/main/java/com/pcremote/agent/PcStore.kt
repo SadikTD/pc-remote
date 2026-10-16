@@ -14,7 +14,7 @@ interface KeyValue {
 /** A PC paired through the host agent. [token] is the long-lived device token. */
 data class PairedPc(
     val id: String, val name: String, val hosts: List<String>, val port: Int, val fingerprint: String,
-    val token: String, val moonlightUuid: String?, val macs: List<String>,
+    val token: String, val macs: List<String>,
     /** Public address from "access from anywhere", tried after the LAN hosts. */
     val publicHost: String? = null,
     /** The rendezvous Worker, tried when nothing direct answers. */
@@ -31,7 +31,7 @@ object HostOrder {
 @Serializable
 private data class StoredPc(
     val id: String, val name: String, val hosts: List<String>, val port: Int, val fp: String,
-    val sealedToken: String, val moonlightUuid: String? = null, val macs: List<String> = emptyList(),
+    val sealedToken: String, val macs: List<String> = emptyList(),
     val publicHost: String? = null,
     val relayUrl: String? = null, val relayDev: String? = null, val sealedTicket: String? = null,
 )
@@ -49,11 +49,11 @@ class PcStore(private val kv: KeyValue, private val box: SecretBox) {
         val token = runCatching { box.open(s.sealedToken) }.getOrNull() ?: return@mapNotNull null
         val relay = if (s.relayUrl != null && s.relayDev != null && s.sealedTicket != null)
             runCatching { RelayInfo(s.relayUrl, s.id, s.relayDev, RelayInfo.b64url(box.open(s.sealedTicket))!!) }.getOrNull() else null
-        PairedPc(s.id, s.name, s.hosts, s.port, s.fp, token, s.moonlightUuid, s.macs, s.publicHost, relay)
+        PairedPc(s.id, s.name, s.hosts, s.port, s.fp, token, s.macs, s.publicHost, relay)
     }
 
     fun upsert(pc: PairedPc) {
-        val stored = StoredPc(pc.id, pc.name, pc.hosts, pc.port, pc.fingerprint, box.seal(pc.token), pc.moonlightUuid, pc.macs, pc.publicHost,
+        val stored = StoredPc(pc.id, pc.name, pc.hosts, pc.port, pc.fingerprint, box.seal(pc.token), pc.macs, pc.publicHost,
             pc.relay?.url, pc.relay?.dev, pc.relay?.let { box.seal(RelayInfo.b64url(it.ticket)) })
         val l = load().toMutableList()
         val i = l.indexOfFirst { it.id == pc.id }
@@ -63,7 +63,6 @@ class PcStore(private val kv: KeyValue, private val box: SecretBox) {
 
     fun remove(id: String) = save(load().filterNot { it.id == id })
 
-    fun byMoonlightUuid(uuid: String) = all().firstOrNull { it.moonlightUuid == uuid }
 
     companion object {
         private const val KEY = "pcremote_pcs"

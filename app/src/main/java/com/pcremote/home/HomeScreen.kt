@@ -28,7 +28,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.limelight.R
+import com.pcremote.R
 import com.pcremote.nav.Mode
 import com.pcremote.ui.components.*
 import com.pcremote.ui.theme.LocalMidnight
@@ -163,7 +163,6 @@ private fun PcCard(card: PcCardUi, thumb: ImageBitmap?, implemented: Set<Mode>, 
                 val (label, icon) = when (card.primary) {
                     PrimaryAction.OPEN -> R.string.pcr_open to Icons.Rounded.PlayArrow
                     PrimaryAction.WAKE -> R.string.pcr_wake to Icons.Rounded.PowerSettingsNew
-                    PrimaryAction.PAIR -> R.string.pcr_pair to Icons.Rounded.Link
                     PrimaryAction.OFFLINE_HELP -> R.string.pcr_help to Icons.Rounded.HelpOutline
                     PrimaryAction.CHECKING -> R.string.pcr_checking to Icons.Rounded.HourglassEmpty
                 }
@@ -213,7 +212,7 @@ private fun PcSheet(card: PcCardUi, a: HomeActions, onDismiss: () -> Unit) {
                 PrimaryButton(stringResource(R.string.pcr_save), { a.rename(card, name.trim().ifEmpty { card.name }); onDismiss() })
             } else {
                 if (card.canPower) SheetRow(Icons.Rounded.PowerSettingsNew, R.string.pcr_power) { power = true }
-                if (!card.legacy) SheetRow(Icons.Rounded.Edit, R.string.pcr_rename) { renaming = true }
+                SheetRow(Icons.Rounded.Edit, R.string.pcr_rename) { renaming = true }
                 SheetRow(Icons.Rounded.DeleteOutline, if (confirmRemove) R.string.pcr_remove_confirm else R.string.pcr_remove, danger = true) {
                     if (confirmRemove) { a.remove(card); onDismiss() } else confirmRemove = true
                 }

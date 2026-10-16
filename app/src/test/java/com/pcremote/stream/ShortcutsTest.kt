@@ -1,8 +1,8 @@
 package com.pcremote.stream
 
-import com.limelight.nvstream.input.KeyboardPacket.KEY_DOWN
-import com.limelight.nvstream.input.KeyboardPacket.KEY_UP
-import com.limelight.nvstream.input.KeyboardPacket.MODIFIER_CTRL
+import com.pcremote.stream.KeyboardPacket.KEY_DOWN
+import com.pcremote.stream.KeyboardPacket.KEY_UP
+import com.pcremote.stream.KeyboardPacket.MODIFIER_CTRL
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

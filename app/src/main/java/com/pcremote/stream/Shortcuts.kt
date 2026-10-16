@@ -1,6 +1,14 @@
 package com.pcremote.stream
 
-import com.limelight.nvstream.input.KeyboardPacket
+/** Key event directions and modifier bits (Windows-style, as the keyboard bar tracks them). */
+object KeyboardPacket {
+    const val KEY_DOWN: Byte = 0x03
+    const val KEY_UP: Byte = 0x04
+    const val MODIFIER_SHIFT: Byte = 0x01
+    const val MODIFIER_CTRL: Byte = 0x02
+    const val MODIFIER_ALT: Byte = 0x04
+    const val MODIFIER_META: Byte = 0x08
+}
 
 data class KeyEvt(val keyMap: Short, val direction: Byte, val modifiers: Byte)
 
@@ -26,7 +34,7 @@ enum class Shortcut(private vararg val vks: Int) {
 
 }
 
-// Same encoding as Moonlight's KeyboardTranslator: 0x80 prefix in the high byte.
+// 0x80 prefix in the high byte marks a Windows virtual-key code.
 internal fun keyMap(vk: Int) = ((0x80 shl 8) or vk).toShort()
 
 /** Downs for [vks] in order, carrying the modifier mask held so far. */

@@ -36,8 +36,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
-import com.limelight.R
-import com.limelight.nvstream.input.KeyboardPacket
+import com.pcremote.R
+import com.pcremote.stream.KeyboardPacket
 import com.pcremote.agent.AgentState
 import com.pcremote.agent.Msg
 import com.pcremote.settings.SettingsModel
@@ -53,7 +53,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/** Moonlight-style key events → agent `key` messages. */
+/** Keyboard-bar key events → agent `key` messages. */
 fun KeyEvt.toMsg() = Msg.Key(keyMap.toInt() and 0xFF, direction == KeyboardPacket.KEY_DOWN)
 
 private const val SENTINEL = "​​" // keeps backspace observable in an empty field

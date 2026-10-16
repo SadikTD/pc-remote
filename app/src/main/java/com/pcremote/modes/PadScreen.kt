@@ -39,7 +39,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.limelight.R
+import com.pcremote.R
 import com.pcremote.agent.AgentState
 import com.pcremote.agent.Msg
 import com.pcremote.settings.SettingsModel

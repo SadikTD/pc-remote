@@ -20,15 +20,12 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.limelight.R
-import com.limelight.nvstream.wol.WakeOnLanSender
+import com.pcremote.R
 import com.pcremote.agent.agentPair
 import com.pcremote.home.HomeActions
 import com.pcremote.home.HomeController
 import com.pcremote.home.HomeScreen
 import com.pcremote.home.PrimaryAction
-import com.pcremote.moonlight.Computers
-import com.pcremote.moonlight.launchStream
 import com.pcremote.nav.Mode
 import com.pcremote.nav.Routes
 import com.pcremote.onboarding.OnboardingScreen
@@ -36,20 +33,20 @@ import com.pcremote.onboarding.PairingDeps
 import com.pcremote.onboarding.PairingModel
 import com.pcremote.onboarding.PairingOverlay
 import com.pcremote.onboarding.scanQr
-import com.pcremote.pclist.PcListActivity
 import com.pcremote.ui.theme.MidnightTheme
 import kotlinx.coroutines.launch
 import kotlin.concurrent.thread
 
 const val PREF_ONBOARDED = "pcremote_onboarded"
-const val SETUP_GUIDE_URL = "https://github.com/SadikTD/pc-remote/blob/main/docs/setup-sunshine.md"
+const val SETUP_GUIDE_URL = "https://github.com/SadikTD/pc-remote#readme"
 
-/** Modes with a screen in this build; Track C adds the rest. */
+/** Modes with a screen in this build. */
 val IMPLEMENTED_MODES = setOf(Mode.SCREEN, Mode.REMOTE, Mode.MEDIA, Mode.SLIDES, Mode.PAD, Mode.FILES)
 
 class MainActivity : ComponentActivity() {
-    private lateinit var computers: Computers
     private lateinit var home: HomeController
+    /** The paste-a-link dialog (phones without a usable camera). */
+    private var manualOpen by mutableStateOf(false)
     private lateinit var pairing: PairingModel
 
     /** pcremote://pair… links (camera-app scans) start pairing straight away. */
@@ -77,18 +74,14 @@ class MainActivity : ComponentActivity() {
             else androidx.activity.SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
         )
         super.onCreate(savedInstanceState)
-        computers = Computers(applicationContext).also { it.bind() }
-        home = HomeController(applicationContext, lifecycleScope, computers)
+        home = HomeController(applicationContext, lifecycleScope)
         pairing = PairingModel(PairingDeps(
             agentPair = { uri, device, pin -> agentPair(lifecycleScope, uri, device, pin) },
-            moonlightPair = { host, pin -> computers.pair(host, pin) },
             save = { home.store.upsert(it); home.refreshStore() },
             device = Build.MODEL,
         ))
         handlePairLink(intent)
-        val legacyOrPaired = home.store.all().isNotEmpty() ||
-            com.limelight.computers.ComputerDatabaseManager(this).run { try { getAllComputers().isNotEmpty() } finally { close() } }
-        val start = Routes.start(if (legacyOrPaired) 1 else 0, prefs.getBoolean(PREF_ONBOARDED, false))
+        val start = Routes.start(if (home.store.all().isNotEmpty()) 1 else 0, prefs.getBoolean(PREF_ONBOARDED, false))
 
         setContent {
             var themeTick by remember { mutableIntStateOf(0) }
@@ -105,6 +98,9 @@ class MainActivity : ComponentActivity() {
                     prefs.edit().putBoolean(PREF_ONBOARDED, true).apply()
                     nav.navigate(Routes.HOME) { popUpTo(Routes.ONBOARDING) { inclusive = true } }
                 }
+                if (manualOpen) com.pcremote.onboarding.ManualPairDialog(
+                    onPair = { link -> manualOpen = false; scope.launch { pairing.onScanned(link) } },
+                    onDismiss = { manualOpen = false })
                 NavHost(nav, start,
                     enterTransition = { slideInHorizontally { it / 6 } + fadeIn() },
                     exitTransition = { fadeOut() },
@@ -114,7 +110,7 @@ class MainActivity : ComponentActivity() {
                     composable(Routes.ONBOARDING) {
                         OnboardingScreen(pairing,
                             onDone = { pairing.reset(); finishOnboarding() },
-                            onManual = { startActivity(Intent(this@MainActivity, PcListActivity::class.java)) },
+                            onManual = ::manualPairing,
                             onSkip = ::finishOnboarding)
                     }
                     composable(Routes.modePattern(Mode.SCREEN)) { e ->
@@ -148,23 +144,13 @@ class MainActivity : ComponentActivity() {
                             if (pairState is com.pcremote.onboarding.PairingState.Done) { pairing.reset(); home.stop(); home.start() }
                         }
                         HomeScreen(cards, thumbs, IMPLEMENTED_MODES, HomeActions(
-                            open = { card, mode ->
-                                // v1 hosts (Moonlight/Sunshine) only for legacy cards; our engine otherwise
-                                if (mode == Mode.SCREEN && card.legacy) openMode(card.moonlightUuid, mode) else nav.navigate(Routes.mode(card.id, mode))
-                            },
+                            open = { card, mode -> nav.navigate(Routes.mode(card.id, mode)) },
                             primary = { card ->
                                 when (card.primary) {
                                     PrimaryAction.OPEN -> {
-                                        val m = card.modes.firstOrNull { it in IMPLEMENTED_MODES }
-                                        when {
-                                            m == null -> manualPairing()
-                                            m == Mode.SCREEN && card.legacy -> openMode(card.moonlightUuid, m)
-                                            else -> nav.navigate(Routes.mode(card.id, m))
-                                        }
+                                        card.modes.firstOrNull { it in IMPLEMENTED_MODES }?.let { nav.navigate(Routes.mode(card.id, it)) }
                                     }
-                                    PrimaryAction.WAKE -> wake(home.wolTarget(card))
-                                    // A PC found on the network but not paired yet: pair by scanning its code
-                                    PrimaryAction.PAIR -> scanQr(this@MainActivity, onUnavailable = ::manualPairing) { raw -> scope.launch { pairing.onScanned(raw) } }
+                                    PrimaryAction.WAKE -> wake(card)
                                     PrimaryAction.OFFLINE_HELP -> startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(SETUP_GUIDE_URL)))
                                     PrimaryAction.CHECKING -> Unit
                                 }
@@ -188,20 +174,12 @@ class MainActivity : ComponentActivity() {
     private fun modeId(e: androidx.navigation.NavBackStackEntry) =
         java.net.URLDecoder.decode(e.arguments?.getString(Routes.ARG_ID).orEmpty(), "UTF-8")
 
-    private fun manualPairing() = startActivity(Intent(this, PcListActivity::class.java))
+    private fun manualPairing() { manualOpen = true }
 
-    private fun openMode(moonlightUuid: String?, mode: Mode) {
-        when (mode) {
-            Mode.SCREEN -> moonlightUuid?.let { lifecycleScope.launch { launchStream(this@MainActivity, computers, it) } }
-            else -> Unit // Track C
-        }
-    }
-
-    private fun wake(target: com.limelight.nvstream.http.ComputerDetails?) {
-        if (target == null) { Toast.makeText(this, R.string.wol_no_mac, Toast.LENGTH_SHORT).show(); return }
+    private fun wake(card: com.pcremote.home.PcCardUi) {
         thread {
-            val ok = runCatching { WakeOnLanSender.sendWolPacket(target) }.isSuccess
-            runOnUiThread { Toast.makeText(this, if (ok) R.string.wol_waking_msg else R.string.wol_fail, Toast.LENGTH_SHORT).show() }
+            val ok = home.wake(card)
+            runOnUiThread { Toast.makeText(this, if (ok == null) R.string.pcr_wol_no_mac else R.string.pcr_wol_sent, Toast.LENGTH_SHORT).show() }
         }
     }
 
@@ -218,8 +196,4 @@ class MainActivity : ComponentActivity() {
         return super.dispatchKeyEvent(event)
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        computers.unbind()
-    }
 }

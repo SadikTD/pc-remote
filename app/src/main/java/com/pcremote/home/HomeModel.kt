@@ -4,10 +4,7 @@ import com.pcremote.agent.AgentState
 import com.pcremote.agent.PairedPc
 import com.pcremote.nav.Mode
 
-/** The bits of a Moonlight ComputerDetails that Home needs. [online] null = not polled yet. */
-data class MlPc(val uuid: String, val name: String, val online: Boolean?, val paired: Boolean, val hasMac: Boolean, val address: String?)
-
-enum class PrimaryAction { OPEN, WAKE, PAIR, OFFLINE_HELP, CHECKING }
+enum class PrimaryAction { OPEN, WAKE, OFFLINE_HELP, CHECKING }
 
 data class PcCardUi(
     val id: String,
@@ -16,9 +13,6 @@ data class PcCardUi(
     val streaming: Boolean,
     val modes: List<Mode>,
     val primary: PrimaryAction,
-    /** Paired only through Moonlight's PIN flow (no PC Remote Host). */
-    val legacy: Boolean,
-    val moonlightUuid: String?,
     /** The host advertises power actions. */
     val canPower: Boolean = false,
 )
@@ -33,40 +27,17 @@ object HomeModel {
         if ("files" in caps) add(Mode.FILES)
     }
 
-    fun cards(
-        ml: List<MlPc>,
-        agents: List<PairedPc>,
-        live: Map<String, AgentState>,
-        streaming: Map<String, Boolean>,
-    ): List<PcCardUi> {
-        val linked = agents.mapNotNull { it.moonlightUuid }.toSet()
-        val agentCards = agents.map { pc ->
-            val m = ml.firstOrNull { it.uuid == pc.moonlightUuid }
+    fun cards(agents: List<PairedPc>, live: Map<String, AgentState>, streaming: Map<String, Boolean>): List<PcCardUi> =
+        agents.map { pc ->
             val st = live[pc.id]
-            val agentOnline = st is AgentState.Online
-            val screen = m != null && m.paired && m.online == true
-            val caps = (st as? AgentState.Online)?.caps.orEmpty()
-            // our own engine when the host has it; the Moonlight path only for v1 hosts
-            val modes = (if (screen && "stream" !in caps) listOf(Mode.SCREEN) else emptyList()) + capModes(caps)
-            val online = agentOnline || m?.online == true
+            val online = st is AgentState.Online
             val primary = when {
                 online -> PrimaryAction.OPEN
                 st == null || st is AgentState.Connecting -> PrimaryAction.CHECKING
-                pc.macs.isNotEmpty() || m?.hasMac == true -> PrimaryAction.WAKE
+                pc.macs.isNotEmpty() -> PrimaryAction.WAKE
                 else -> PrimaryAction.OFFLINE_HELP
             }
-            PcCardUi(pc.id, pc.name, online, streaming[pc.id] == true, modes, primary, false, pc.moonlightUuid,
+            PcCardUi(pc.id, pc.name, online, streaming[pc.id] == true, (st as? AgentState.Online)?.caps.orEmpty().let(::capModes), primary,
                 canPower = st is AgentState.Online && "power" in st.caps)
         }
-        val legacyCards = ml.filter { it.uuid !in linked }.map { m ->
-            val primary = when (m.online) {
-                null -> PrimaryAction.CHECKING
-                true -> if (m.paired) PrimaryAction.OPEN else PrimaryAction.PAIR
-                false -> if (m.hasMac) PrimaryAction.WAKE else PrimaryAction.OFFLINE_HELP
-            }
-            PcCardUi(m.uuid, m.name, m.online == true, streaming[m.uuid] == true,
-                if (m.paired) listOf(Mode.SCREEN) else emptyList(), primary, true, m.uuid)
-        }
-        return agentCards + legacyCards
-    }
 }

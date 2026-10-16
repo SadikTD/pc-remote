@@ -43,7 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.limelight.R
+import com.pcremote.R
 import com.pcremote.ui.components.PrimaryButton
 import com.pcremote.ui.theme.LocalMidnight
 import com.pcremote.ui.theme.MidnightTheme

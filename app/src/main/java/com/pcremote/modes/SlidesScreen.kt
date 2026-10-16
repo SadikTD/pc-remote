@@ -26,7 +26,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import com.limelight.R
+import com.pcremote.R
 import com.pcremote.agent.AgentState
 import com.pcremote.agent.Msg
 import com.pcremote.settings.SettingsModel

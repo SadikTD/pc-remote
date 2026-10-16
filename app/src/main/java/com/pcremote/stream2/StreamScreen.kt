@@ -33,7 +33,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import com.limelight.R
+import com.pcremote.R
 import com.pcremote.agent.AgentState
 import com.pcremote.agent.Msg
 import com.pcremote.modes.KeepScreenOn
@@ -260,12 +260,19 @@ private fun fit(box: IntSize, w: Int, h: Int): Pic? {
     return Pic((box.width - pw) / 2, (box.height - ph) / 2, pw, ph)
 }
 
-/** Ask for the phone's own landscape resolution and refresh rate; the host fits the PC's aspect inside it. */
+/**
+ * Auto quality: the phone's own landscape resolution and refresh rate, up to 50 Mbps (the host adapts
+ * bitrate to the network and fits the PC's aspect inside). A chosen preset caps all three.
+ */
 private fun request(ctx: Context): StreamRequest {
     val dm = ctx.resources.displayMetrics
     val w = maxOf(dm.widthPixels, dm.heightPixels); val h = minOf(dm.widthPixels, dm.heightPixels)
     @Suppress("DEPRECATION")
     val hz = (ctx.getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager).defaultDisplay.refreshRate
+    if (!com.pcremote.quality.QualityPrefs.isAuto(ctx)) {
+        val p = com.pcremote.quality.QualityPrefs.current(ctx)
+        return StreamRequest(minOf(w, p.width), minOf(h, p.height), p.fps, p.bitrateKbps)
+    }
     return StreamRequest(w, h, hz.toInt().coerceIn(30, 120), 50_000)
 }
 

@@ -1,6 +1,6 @@
 package com.pcremote.onboarding
 
-import com.limelight.R
+import com.pcremote.R
 import com.pcremote.agent.FailReason
 import com.pcremote.agent.PairUri
 import com.pcremote.agent.PairedPc
@@ -15,22 +15,11 @@ class PairingModelTest {
     private val qr = "pcremote://pair?n=Desk&h=192.168.0.9&p=47999&fp=$fp&t=otp"
     private val pc = PcInfo("pc-1", "DESK", macs = listOf("AA:BB"))
 
-    private class Fakes(
-        val agent: Result<AgentPaired>,
-        val moonlightUuid: String? = "ML-UUID",
-        val moonlightHangs: Boolean = false,
-    ) {
+    private class Fakes(val agent: Result<AgentPaired>) {
         val stored = mutableListOf<PairedPc>()
         var pinSeenByAgent: String? = null
-        var pinSeenByMoonlight: String? = null
-        var hostSeenByMoonlight: String? = null
         val deps = PairingDeps(
             agentPair = { _: PairUri, _: String, pin: String -> pinSeenByAgent = pin; agent },
-            moonlightPair = { host: String, pin: String ->
-                hostSeenByMoonlight = host; pinSeenByMoonlight = pin
-                if (moonlightHangs) kotlinx.coroutines.awaitCancellation()
-                moonlightUuid
-            },
             save = { stored += it },
             device = "Pixel 8",
         )
@@ -67,50 +56,12 @@ class PairingModelTest {
         assertTrue(f.stored.isEmpty())
     }
 
-    @Test fun `success stores the pc with token and moonlight uuid, same pin both sides`() = runTest {
+    @Test fun `success stores the pc with its token`() = runTest {
         val f = Fakes(ok())
         val m = PairingModel(f.deps)
         m.onScanned(qr)
         assertEquals(PairingState.Done("pc-1"), m.state.value)
-        val s = f.stored.single()
-        assertEquals(PairedPc("pc-1", "DESK", listOf("192.168.0.9"), 47999, fp, "tok", "ML-UUID", listOf("AA:BB")), s)
-        assertEquals(f.pinSeenByAgent, f.pinSeenByMoonlight)
-        assertTrue(f.pinSeenByAgent!!.matches(Regex("\\d{4}")))
-    }
-
-    @Test fun `moonlight pairing failure still saves agent pairing`() = runTest {
-        val f = Fakes(ok(), moonlightUuid = null)
-        val m = PairingModel(f.deps)
-        m.onScanned(qr)
-        assertEquals(PairingState.Done("pc-1"), m.state.value)
-        assertEquals(null, f.stored.single().moonlightUuid)
-    }
-
-    @Test fun `moonlight pairing that never finishes times out and still saves`() = runTest {
-        val f = Fakes(ok(), moonlightHangs = true)
-        val m = PairingModel(f.deps)
-        m.onScanned(qr)
-        assertEquals(PairingState.Done("pc-1"), m.state.value)
-        assertEquals(null, f.stored.single().moonlightUuid)
-    }
-
-    @Test fun `moonlight pairs with the host the agent actually reached`() = runTest {
-        val f = Fakes(ok(host = "10.0.0.5"))
-        PairingModel(f.deps).onScanned("pcremote://pair?n=Desk&h=192.168.0.9,10.0.0.5&p=47999&fp=$fp&t=otp")
-        assertEquals("10.0.0.5", f.hostSeenByMoonlight)
-    }
-
-    @Test fun `moonlight pairing is retried while the pc is briefly unavailable`() = runTest {
-        var calls = 0
-        val stored = mutableListOf<PairedPc>()
-        val deps = PairingDeps(
-            agentPair = { _: PairUri, _: String, _: String -> ok() },
-            moonlightPair = { _: String, _: String -> if (++calls < 3) null else "ML-UUID" },
-            save = { stored += it },
-            device = "Pixel",
-        )
-        PairingModel(deps).onScanned(qr)
-        assertEquals(3, calls)
-        assertEquals("ML-UUID", stored.single().moonlightUuid)
+        assertEquals(PairedPc("pc-1", "DESK", listOf("192.168.0.9"), 47999, fp, "tok", listOf("AA:BB")), f.stored.single())
+        assertTrue(f.pinSeenByAgent!!.matches(Regex("""\d{4}""")))
     }
 }

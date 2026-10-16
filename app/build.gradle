@@ -3,11 +3,9 @@ apply plugin: 'org.jetbrains.kotlin.plugin.compose'
 apply plugin: 'org.jetbrains.kotlin.plugin.serialization'
 
 android {
-    ndkVersion "29.0.14206865"
-
     compileSdk 37
 
-    namespace 'com.limelight'
+    namespace 'com.pcremote'
 
     defaultConfig {
         // PC Remote's UI is English-only for now; mixed-language screens look broken
@@ -15,11 +13,8 @@ android {
         minSdk 26
         targetSdk 36
 
-        versionName "12.2"
-        versionCode = 315
-
-        // Generate native debug symbols to allow Google Play to symbolicate our native crashes
-        ndk.debugSymbolLevel = 'FULL'
+        versionName "2.0.0"
+        versionCode = 400
     }
 
     flavorDimensions.add("root")
@@ -32,12 +27,6 @@ android {
 
     productFlavors {
         nonRoot {
-            externalNativeBuild {
-                ndkBuild {
-                    arguments "PRODUCT_FLAVOR=nonRoot"
-                }
-            }
-
             applicationId "com.pcremote.app"
             dimension "root"
             buildConfigField "boolean", "ROOT_BUILD", "false"
@@ -56,20 +45,6 @@ android {
         lintConfig file('lint.xml')
     }
 
-    bundle {
-        language {
-            // Avoid splitting by language, since we allow users
-            // to manually switch language in settings.
-            enableSplit = false
-        }
-        density {
-            // FIXME: This should not be necessary but we get
-            // weird crashes due to missing drawable resources
-            // when this split is enabled.
-            enableSplit = false
-        }
-    }
-
     // Release signing comes from ~/.pcremote/keystore.properties (kept out of the repo).
     def ksFile = new File(System.getProperty("user.home"), ".pcremote/keystore.properties")
     signingConfigs {
@@ -82,16 +57,6 @@ android {
                 keyAlias ks['keyAlias']
                 keyPassword ks['keyPassword']
             }
-        }
-    }
-
-    // One APK per architecture keeps each download small.
-    splits {
-        abi {
-            enable true
-            reset()
-            include 'arm64-v8a', 'armeabi-v7a', 'x86_64'
-            universalApk false
         }
     }
 
@@ -112,34 +77,15 @@ android {
         }
     }
 
-    externalNativeBuild {
-        ndkBuild {
-            path "src/main/jni/Android.mk"
-        }
-    }
-
     packaging {
         resources {
-            // BouncyCastle includes duplicate LICENSE.md files
             excludes += '/META-INF/*.md'
-            // Unused BouncyCastle post-quantum data and verbose messages (~1.3 MB)
-            excludes += 'org/bouncycastle/pqc/**'
-            excludes += 'org/bouncycastle/**/CertPathReviewerMessages*.properties'
-        }
-        jniLibs {
-            // Compressed native libs: much smaller download (Moonlight core is 5 MB raw)
-            useLegacyPackaging = true
         }
     }
 }
 
 dependencies {
-    implementation 'org.bouncycastle:bcprov-jdk18on:1.85.2'
-    implementation 'org.bouncycastle:bcpkix-jdk18on:1.85'
-    implementation 'org.jcodec:jcodec:0.2.5'
     implementation 'com.squareup.okhttp3:okhttp:5.5.0'
-    implementation 'org.jmdns:jmdns:3.6.3'
-    implementation 'com.github.cgutman:ShieldControllerExtensions:1.0.1'
 
     implementation platform('androidx.compose:compose-bom:2025.10.00')
     implementation 'androidx.compose.material3:material3'
@@ -156,6 +102,7 @@ dependencies {
     implementation 'androidx.camera:camera-lifecycle:1.4.2'
     implementation 'androidx.camera:camera-view:1.4.2'
     testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.bouncycastle:bcpkix-jdk18on:1.85' // test certificates only
     testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2'
 
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'

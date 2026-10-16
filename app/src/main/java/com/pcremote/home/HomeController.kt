@@ -5,14 +5,11 @@ import android.graphics.BitmapFactory
 import android.os.Build
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
-import com.limelight.nvstream.http.ComputerDetails
-import com.limelight.nvstream.http.PairingManager
 import com.pcremote.agent.AgentConnection
 import com.pcremote.agent.AgentState
 import com.pcremote.agent.Msg
 import com.pcremote.agent.PairedPc
 import com.pcremote.agent.PcStore
-import com.pcremote.moonlight.Computers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,10 +20,10 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
- * Live data for Home: Moonlight computers + paired agent PCs, with agent connections that are
+ * Live data for Home: paired PCs, with agent connections that are
  * open only while Home is visible ([start]/[stop]), so nothing runs in the background.
  */
-class HomeController(ctx: Context, private val scope: CoroutineScope, val computers: Computers) {
+class HomeController(ctx: Context, private val scope: CoroutineScope) {
     val store = PcStore.get(ctx)
     /** Same-network discovery: a paired PC that turns up (or changes address) connects with no taps. */
     private val lan = com.pcremote.discovery.Lan(ctx) { found -> scope.launch { onLan(found) } }
@@ -38,8 +35,8 @@ class HomeController(ctx: Context, private val scope: CoroutineScope, val comput
     private val conns = mutableMapOf<String, AgentConnection>()
     private val jobs = mutableListOf<Job>()
 
-    val cards: StateFlow<List<PcCardUi>> = combine(computers.pcs, paired, live, streaming) { ml, agents, l, s ->
-        HomeModel.cards(ml.values.map { it.toMl() }, agents, l, s)
+    val cards: StateFlow<List<PcCardUi>> = combine(paired, live, streaming) { agents, l, s ->
+        HomeModel.cards(agents, l, s)
     }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
     fun refreshStore() { scope.launch(kotlinx.coroutines.Dispatchers.IO) { paired.value = store.all() } }
@@ -57,7 +54,6 @@ class HomeController(ctx: Context, private val scope: CoroutineScope, val comput
     }
 
     fun start() {
-        computers.startPolling()
         lan.start()
         // Keystore decryption happens off the main thread
         scope.launch {
@@ -104,7 +100,6 @@ class HomeController(ctx: Context, private val scope: CoroutineScope, val comput
     }
 
     fun stop() {
-        computers.stopPolling()
         lan.stop()
         jobs.forEach { it.cancel() }; jobs.clear()
         conns.values.forEach { it.close() }; conns.clear()
@@ -112,29 +107,16 @@ class HomeController(ctx: Context, private val scope: CoroutineScope, val comput
     }
 
     fun remove(card: PcCardUi) {
-        if (!card.legacy) { conns.remove(card.id)?.close(); store.remove(card.id); refreshStore() }
-        card.moonlightUuid?.let { computers.forget(it) }
+        conns.remove(card.id)?.close(); store.remove(card.id); refreshStore()
     }
 
     fun rename(id: String, name: String) {
         store.all().firstOrNull { it.id == id }?.let { store.upsert(it.copy(name = name)); refreshStore() }
     }
 
-    /** Details for Wake-on-LAN: Moonlight's if linked, else built from the agent PC's MACs and hosts. */
-    fun wolTarget(card: PcCardUi): ComputerDetails? {
-        card.moonlightUuid?.let { u -> computers.pcs.value[u]?.let { if (it.macAddress != null) return it } }
-        val pc = paired.value.firstOrNull { it.id == card.id } ?: return null
-        return ComputerDetails().apply {
-            macAddress = pc.macs.firstOrNull() ?: return null
-            localAddress = ComputerDetails.AddressTuple(pc.hosts.first(), 47989)
-        }
+    /** Wakes the card's PC with its MACs (broadcast and each stored address). Blocking. */
+    fun wake(card: PcCardUi): Boolean? {
+        val pc = paired.value.firstOrNull { it.id == card.id }?.takeIf { it.macs.isNotEmpty() } ?: return null
+        return WakeOnLan.send(pc.macs, pc.hosts)
     }
 }
-
-private fun ComputerDetails.toMl() = MlPc(
-    uuid = uuid, name = name ?: "PC",
-    online = when (state) { ComputerDetails.State.ONLINE -> true; ComputerDetails.State.OFFLINE -> false; else -> null },
-    paired = pairState == PairingManager.PairState.PAIRED,
-    hasMac = macAddress != null,
-    address = activeAddress?.address,
-)
