@@ -136,7 +136,8 @@ class FilesController(private val ctx: Context, private val conn: AgentConnectio
                     }
                 }
             }
-            val r = withTimeoutOrNull(120_000) { done.await() }
+            // The host verifies the whole file's hash before answering; allow time for big files
+            val r = withTimeoutOrNull(120_000 + p.size / 20_000) { done.await() }
             if (r is Msg.FileDone) {
                 pending.remove(p.id)
                 update(p.id) { it.copy(progress = 1f, status = Transfer.Status.DONE) }

@@ -212,7 +212,7 @@ private fun PcSheet(card: PcCardUi, a: HomeActions, onDismiss: () -> Unit) {
                 Spacer(Modifier.height(12.dp))
                 PrimaryButton(stringResource(R.string.pcr_save), { a.rename(card, name.trim().ifEmpty { card.name }); onDismiss() })
             } else {
-                if (!card.legacy && card.online) SheetRow(Icons.Rounded.PowerSettingsNew, R.string.pcr_power) { power = true }
+                if (card.canPower) SheetRow(Icons.Rounded.PowerSettingsNew, R.string.pcr_power) { power = true }
                 if (!card.legacy) SheetRow(Icons.Rounded.Edit, R.string.pcr_rename) { renaming = true }
                 SheetRow(Icons.Rounded.DeleteOutline, if (confirmRemove) R.string.pcr_remove_confirm else R.string.pcr_remove, danger = true) {
                     if (confirmRemove) { a.remove(card); onDismiss() } else confirmRemove = true

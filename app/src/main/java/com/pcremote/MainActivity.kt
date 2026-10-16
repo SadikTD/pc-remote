@@ -104,19 +104,19 @@ class MainActivity : ComponentActivity() {
                             onSkip = ::finishOnboarding)
                     }
                     composable(Routes.modePattern(Mode.REMOTE)) { e ->
-                        com.pcremote.modes.RemoteScreen(modeId(e), onBack = { nav.popBackStack() }, onPower = {})
+                        com.pcremote.modes.RemoteScreen(modeId(e), onBack = { nav.popBackStack() })
                     }
                     composable(Routes.modePattern(Mode.MEDIA)) { e ->
-                        com.pcremote.modes.MediaScreen(modeId(e), onBack = { nav.popBackStack() }, onPower = {})
+                        com.pcremote.modes.MediaScreen(modeId(e), onBack = { nav.popBackStack() })
                     }
                     composable(Routes.modePattern(Mode.SLIDES)) { e ->
-                        com.pcremote.modes.SlidesScreen(modeId(e), onBack = { nav.popBackStack() }, onPower = {})
+                        com.pcremote.modes.SlidesScreen(modeId(e), onBack = { nav.popBackStack() })
                     }
                     composable(Routes.modePattern(Mode.PAD)) { e ->
                         com.pcremote.modes.PadScreen(modeId(e), onBack = { nav.popBackStack() })
                     }
                     composable(Routes.modePattern(Mode.FILES)) { e ->
-                        com.pcremote.modes.FilesScreen(modeId(e), onBack = { nav.popBackStack() }, onPower = {})
+                        com.pcremote.modes.FilesScreen(modeId(e), onBack = { nav.popBackStack() })
                     }
                     composable(Routes.SETTINGS) {
                         com.pcremote.settings.SettingsScreen(settings, onBack = { nav.popBackStack() },

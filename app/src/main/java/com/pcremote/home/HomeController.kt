@@ -28,7 +28,7 @@ import kotlinx.coroutines.launch
  */
 class HomeController(ctx: Context, private val scope: CoroutineScope, val computers: Computers) {
     val store = PcStore.get(ctx)
-    private val paired = MutableStateFlow(store.all())
+    private val paired = MutableStateFlow<List<PairedPc>>(emptyList())
     private val live = MutableStateFlow<Map<String, AgentState>>(emptyMap())
     private val streaming = MutableStateFlow<Map<String, Boolean>>(emptyMap())
     private val _thumbs = MutableStateFlow<Map<String, ImageBitmap>>(emptyMap())
@@ -40,14 +40,18 @@ class HomeController(ctx: Context, private val scope: CoroutineScope, val comput
         HomeModel.cards(ml.values.map { it.toMl() }, agents, l, s)
     }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
-    fun refreshStore() { paired.value = store.all() }
+    fun refreshStore() { scope.launch(kotlinx.coroutines.Dispatchers.IO) { paired.value = store.all() } }
 
     fun connection(id: String): AgentConnection? = conns[id]
 
     fun start() {
         computers.startPolling()
-        refreshStore()
-        for (pc in paired.value) if (pc.id !in conns) open(pc)
+        // Keystore decryption happens off the main thread
+        scope.launch {
+            val pcs = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { store.all() }
+            paired.value = pcs
+            for (pc in pcs) if (pc.id !in conns) open(pc)
+        }
     }
 
     private fun open(pc: PairedPc) {
@@ -64,8 +68,9 @@ class HomeController(ctx: Context, private val scope: CoroutineScope, val comput
             c.incoming.collect { m ->
                 if (m is Msg.Status) streaming.value = streaming.value + (pc.id to m.streaming)
                 if (m is Msg.FileOffer) c.send(Msg.FileReject(m.id)) // files are received on the Files screen
-                if (m is Msg.Net && m.public != pc.publicHost) store.all().firstOrNull { it.id == pc.id }?.let {
-                    store.upsert(it.copy(publicHost = m.public))
+                if (m is Msg.Net) {
+                    val pub = m.public?.takeIf { m.anywhere } // only remember it while access from anywhere is on
+                    store.all().firstOrNull { it.id == pc.id }?.takeIf { it.publicHost != pub }?.let { store.upsert(it.copy(publicHost = pub)) }
                 }
             }
         }

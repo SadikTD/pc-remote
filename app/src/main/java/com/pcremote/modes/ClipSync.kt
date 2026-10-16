@@ -17,7 +17,7 @@ class ClipSync {
 
     /** The phone's clipboard changed; returns the message to send, if any. */
     fun onLocalChange(text: String): Msg.Clip? {
-        if (text == last || text.length > MAX_TEXT) return null
+        if (text == last || text.toByteArray().size > MAX_TEXT) return null
         last = text
         return Msg.Clip("text/plain", text)
     }
@@ -45,8 +45,8 @@ fun ClipboardSync(session: AgentSession?, state: AgentState) {
     LaunchedEffect(online) {
         if (!online) return@LaunchedEffect
         session?.send(Msg.ClipSub(true))
-        // whatever is on the phone now goes to the PC once
-        cm.primaryClip?.getItemAt(0)?.coerceToText(ctx)?.toString()?.let { sync.onLocalChange(it)?.let { m -> session?.send(m) } }
+        // Only copies made while a mode is open go to the PC: reading the existing clipboard on open
+        // would overwrite what the user just copied on the PC (and Android 12+ shows a paste notice)
         session?.conn?.incoming?.collect { m ->
             if (m is Msg.Clip) sync.onRemote(m)?.let { cm.setPrimaryClip(ClipData.newPlainText("PC", it)) }
         }

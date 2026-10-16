@@ -30,7 +30,7 @@ import com.pcremote.ui.theme.LocalMidnight
 import com.pcremote.ui.theme.MidnightShapes
 
 @Composable
-fun FilesScreen(pcId: String, onBack: () -> Unit, onPower: () -> Unit, initial: List<Uri> = emptyList()) {
+fun FilesScreen(pcId: String, onBack: () -> Unit, showPower: Boolean = true, initial: List<Uri> = emptyList()) {
     val session = rememberAgentSession(pcId, acceptsFiles = true)
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
@@ -40,7 +40,7 @@ fun FilesScreen(pcId: String, onBack: () -> Unit, onPower: () -> Unit, initial: 
     var queuedInitial by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(controller) { if (!queuedInitial && initial.isNotEmpty()) { controller?.send(initial); queuedInitial = true } }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris -> controller?.send(uris) }
-    ModeScaffold(R.string.pcr_mode_files, session, onBack, onPower) {
+    ModeScaffold(R.string.pcr_mode_files, session, onBack, showPower) {
         FilesBody(controller?.transfers ?: emptyList()) { picker.launch(arrayOf("*/*")) }
     }
 }

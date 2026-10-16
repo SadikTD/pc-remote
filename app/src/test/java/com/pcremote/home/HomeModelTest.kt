@@ -63,4 +63,11 @@ class HomeModelTest {
             mapOf("a" to AgentState.Online(PcInfo("a", "x"), setOf("input"))), emptyMap()).single()
         assertEquals(listOf(Mode.REMOTE, Mode.SLIDES), c.modes)
     }
+
+    @Test fun `power is offered only when the host advertises it`() {
+        val on = HomeModel.cards(emptyList(), listOf(agent("a")), mapOf("a" to AgentState.Online(PcInfo("a", "x"), setOf("input", "power"))), emptyMap()).single()
+        val off = HomeModel.cards(emptyList(), listOf(agent("a")), mapOf("a" to AgentState.Online(PcInfo("a", "x"), setOf("input"))), emptyMap()).single()
+        assertTrue(on.canPower)
+        assertTrue(!off.canPower)
+    }
 }

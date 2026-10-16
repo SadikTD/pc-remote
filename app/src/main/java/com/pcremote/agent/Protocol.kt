@@ -74,7 +74,7 @@ object Wire {
         classDiscriminator = "t"
         ignoreUnknownKeys = true
         encodeDefaults = true
-        explicitNulls = true
+        explicitNulls = false
     }
 
     fun encode(m: Msg): String =

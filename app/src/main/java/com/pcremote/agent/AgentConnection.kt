@@ -50,6 +50,12 @@ fun interface WsFactory {
     fun open(host: String, port: Int, fingerprint: String, listener: WsListener): Ws
 }
 
+/** `wss://host:port/v1`, with IPv6 literals bracketed. */
+fun wsUrl(host: String, port: Int): String {
+    val h = host.trim('[', ']')
+    return if (':' in h) "wss://[$h]:$port/v1" else "wss://$h:$port/v1"
+}
+
 /** Real WSS sockets with the certificate pinned to the pairing fingerprint. */
 object OkHttpWs : WsFactory {
     private val base = OkHttpClient()
@@ -62,10 +68,11 @@ object OkHttpWs : WsFactory {
             .connectTimeout(2, TimeUnit.SECONDS)
             .readTimeout(0, TimeUnit.MILLISECONDS)
             .build()
-        val ws = client.newWebSocket(Request.Builder().url("wss://$host:$port/v1").build(), object : WebSocketListener() {
+        val ws = client.newWebSocket(Request.Builder().url(wsUrl(host, port)).build(), object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) = listener.onOpen()
             override fun onMessage(webSocket: WebSocket, text: String) = listener.onText(text)
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) = listener.onBinary(bytes.toByteArray())
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { webSocket.close(code, null) } // echo the close
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = listener.onClosed()
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) =
                 listener.onFailure(t, PinnedTrust.isPinMismatch(t))
@@ -166,6 +173,7 @@ class AgentConnection(
         }
     }
 
+    @Synchronized
     private fun dropped(id: Int) {
         if (id != session || closed) return
         pingJob?.cancel()
@@ -175,6 +183,7 @@ class AgentConnection(
         if (wasOnline && token != null) startReconnect()
     }
 
+    @Synchronized
     private fun startReconnect() {
         if (reconnectJob?.isActive == true) return
         reconnectJob = scope.launch {
@@ -228,6 +237,7 @@ class AgentConnection(
         }
     }
 
+    @Synchronized
     private fun online(pc: PcInfo, caps: Set<String>) {
         _state.value = AgentState.Online(pc, caps)
         pingJob?.cancel()
@@ -273,6 +283,7 @@ class AgentConnection(
     fun backlog(): Long = ws?.queueSize() ?: 0
     fun sendBinary(b: ByteArray): Boolean = ws?.send(b) ?: false
 
+    @Synchronized
     fun close() {
         closed = true
         reconnectJob?.cancel()

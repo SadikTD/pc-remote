@@ -59,9 +59,9 @@ fun KeyEvt.toMsg() = Msg.Key(keyMap.toInt() and 0xFF, direction == KeyboardPacke
 private const val SENTINEL = "​​" // keeps backspace observable in an empty field
 
 @Composable
-fun RemoteScreen(pcId: String, onBack: () -> Unit, onPower: () -> Unit) {
+fun RemoteScreen(pcId: String, onBack: () -> Unit) {
     val session = rememberAgentSession(pcId)
-    ModeScaffold(R.string.pcr_mode_remote, session, onBack, onPower) { state ->
+    ModeScaffold(R.string.pcr_mode_remote, session, onBack) { state ->
         val send: (Msg) -> Unit = remember(session) { { m: Msg -> session?.send(m); Unit } }
         RemoteBody(send)
     }
@@ -90,32 +90,37 @@ private fun ColumnScope.RemoteBody(send: (Msg) -> Unit) {
             Modifier.weight(1f).fillMaxHeight().clip(MidnightShapes.card).background(c.surface)
                 .border(1.dp, c.border, MidnightShapes.card)
                 .pointerInput(Unit) {
-                    var holdJob: Job? = null
-                    awaitPointerEventScope {
-                        while (true) {
-                            val e = awaitPointerEvent()
-                            val t = e.changes.firstOrNull()?.uptimeMillis ?: 0L
-                            for (ch in e.changes) {
-                                val id = ch.id.value.toInt()
-                                when {
-                                    ch.pressed && !ch.previousPressed -> {
-                                        emit(model.down(id, ch.position.x, ch.position.y, t))
-                                        holdJob?.cancel()
-                                        holdJob = scope.launch { delay(TrackpadModel.HOLD_MS); emit(model.hold(id, t + TrackpadModel.HOLD_MS)) }
-                                    }
-                                    ch.pressed && ch.positionChanged() -> {
-                                        val p: Offset = ch.position
-                                        val out = model.move(id, p.x, p.y, t)
-                                        if (ch.position != ch.previousPosition) holdJob?.let { j ->
-                                            if ((ch.position - ch.previousPosition).getDistance() > 2f) j.cancel()
+                    // Hold timer lives inside this gesture handler, so a handler reset can't leave the left button down
+                    kotlinx.coroutines.coroutineScope {
+                        val gestures = this
+                        var holdJob: Job? = null
+                        try {
+                            awaitPointerEventScope {
+                                while (true) {
+                                    val e = awaitPointerEvent()
+                                    if (e.type == PointerEventType.Exit) { holdJob?.cancel(); emit(model.cancel()); continue }
+                                    val t = e.changes.firstOrNull()?.uptimeMillis ?: 0L
+                                    for (ch in e.changes) {
+                                        val id = ch.id.value.toInt()
+                                        when {
+                                            ch.pressed && !ch.previousPressed -> {
+                                                emit(model.down(id, ch.position.x, ch.position.y, t))
+                                                holdJob?.cancel()
+                                                holdJob = gestures.launch { delay(TrackpadModel.HOLD_MS); emit(model.hold(id, t + TrackpadModel.HOLD_MS)) }
+                                            }
+                                            ch.pressed && ch.positionChanged() -> {
+                                                if ((ch.position - ch.previousPosition).getDistance() > 2f) holdJob?.cancel()
+                                                emit(model.move(id, ch.position.x, ch.position.y, t))
+                                            }
+                                            !ch.pressed && ch.previousPressed -> { holdJob?.cancel(); emit(model.up(id, t)) }
                                         }
-                                        emit(out)
+                                        ch.consume()
                                     }
-                                    !ch.pressed && ch.previousPressed -> { holdJob?.cancel(); emit(model.up(id, t)) }
                                 }
-                                ch.consume()
                             }
-                            if (e.type == PointerEventType.Exit) emit(model.cancel())
+                        } finally {
+                            holdJob?.cancel()
+                            emit(model.cancel())
                         }
                     }
                 },

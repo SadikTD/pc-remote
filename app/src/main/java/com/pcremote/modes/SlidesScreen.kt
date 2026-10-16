@@ -39,9 +39,9 @@ import kotlinx.coroutines.delay
 private val TARGETS_MIN = listOf(0, 5, 10, 15, 20, 30, 45, 60)
 
 @Composable
-fun SlidesScreen(pcId: String, onBack: () -> Unit, onPower: () -> Unit) {
+fun SlidesScreen(pcId: String, onBack: () -> Unit) {
     val session = rememberAgentSession(pcId)
-    ModeScaffold(R.string.pcr_mode_slides, session, onBack, onPower) { state ->
+    ModeScaffold(R.string.pcr_mode_slides, session, onBack) { state ->
         val send: (List<Msg>) -> Unit = remember(session) { { msgs: List<Msg> -> msgs.forEach { session?.send(it) } } }
         val haptics = rememberHaptics()
         DisposableEffect(Unit) {

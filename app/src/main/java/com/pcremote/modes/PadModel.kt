@@ -101,7 +101,9 @@ object PadLayouts {
 
     val all = listOf(XBOX, RACING, SHOOTER, MINIMAL)
 
-    fun available(hasGyro: Boolean) = all.filter { hasGyro || it.gyro == GyroUse.NONE }
+    fun available(hasGyro: Boolean, hasTilt: Boolean = hasGyro) = all.filter {
+        when (it.gyro) { GyroUse.NONE -> true; GyroUse.STEER -> hasTilt; GyroUse.AIM -> hasGyro }
+    }
 
     private val json = Json { ignoreUnknownKeys = true }
     fun toJson(l: PadLayout) = json.encodeToString(PadLayout.serializer(), l)

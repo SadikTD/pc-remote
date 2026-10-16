@@ -82,13 +82,16 @@
             android:resizeableActivity="true"
             android:windowSoftInputMode="adjustResize"
             android:theme="@android:style/Theme.Material.NoActionBar"
-            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode">
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|fontScale|keyboard|keyboardHidden|navigation|uiMode|layoutDirection">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
                 <category android:name="android.intent.category.MULTIWINDOW_LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- Home-screen shortcuts pinned with older versions still open the app -->
+        <activity-alias android:name="com.limelight.PcView" android:targetActivity="com.pcremote.MainActivity" android:exported="true" />
+        <activity-alias android:name="com.limelight.ShortcutTrampoline" android:targetActivity="com.pcremote.MainActivity" android:exported="true" />
         <activity
             android:name="com.pcremote.modes.ShareToPcActivity"
             android:exported="true"

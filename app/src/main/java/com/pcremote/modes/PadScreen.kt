@@ -48,6 +48,8 @@ import com.pcremote.ui.theme.LocalMidnight
 import com.pcremote.ui.theme.MidnightShapes
 import com.pcremote.ui.theme.rememberHaptics
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.toMutableStateList
 import kotlin.math.atan2
 import kotlin.math.hypot
 
@@ -68,9 +70,14 @@ fun PadScreen(pcId: String, onBack: () -> Unit) {
     BackHandler(onBack = onBack)
     val state by (session?.conn?.state ?: remember { kotlinx.coroutines.flow.MutableStateFlow(AgentState.Closed) }).collectAsState()
     val online = state is AgentState.Online
-    val hasGyro = remember { (ctx.getSystemService(Context.SENSOR_SERVICE) as SensorManager).getDefaultSensor(Sensor.TYPE_GYROSCOPE) != null }
+    val sensors = remember { ctx.getSystemService(Context.SENSOR_SERVICE) as SensorManager }
+    val hasGyro = remember { sensors.getDefaultSensor(Sensor.TYPE_GYROSCOPE) != null }
+    val hasTilt = remember { sensors.getDefaultSensor(Sensor.TYPE_GRAVITY) != null || sensors.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) != null }
+    val scope = rememberCoroutineScope()
     val kv = remember { prefsKv(ctx) }
-    val layouts = remember { PadLayouts.available(hasGyro).map { l -> kv.get(layoutKey(l.id))?.let(PadLayouts::fromJson) ?: l } }
+    val layouts = remember {
+        PadLayouts.available(hasGyro, hasTilt).map { l -> kv.get(layoutKey(l.id))?.let(PadLayouts::fromJson) ?: l }.toMutableStateList()
+    }
     var current by remember { mutableStateOf(layouts.first()) }
     var editing by remember { mutableStateOf(false) }
     var pad by remember { mutableStateOf(PadState()) }
@@ -121,10 +128,21 @@ fun PadScreen(pcId: String, onBack: () -> Unit) {
                 }
             }
             Chip(icon = true, selected = editing, onClick = {
-                if (editing) kv.put(layoutKey(current.id), PadLayouts.toJson(current))
+                if (editing) {
+                    kv.put(layoutKey(current.id), PadLayouts.toJson(current))
+                    val i = layouts.indexOfFirst { it.id == current.id }
+                    if (i >= 0) layouts[i] = current // keep the edit when switching layouts
+                }
                 editing = !editing
             }) { Icon(if (editing) Icons.Rounded.Check else Icons.Rounded.Edit, null, tint = if (editing) c.onAccent else c.text, modifier = Modifier.size(18.dp)) }
-            if (!online) Text(stringResource(R.string.pcr_conn_connecting), color = c.warn, style = MaterialTheme.typography.labelMedium)
+            when {
+                state is AgentState.Failed -> Chip(onClick = { session?.let { s -> scope.launch { s.conn.hello(s.pc.token, Build.MODEL) } } }) {
+                    Text(stringResource(if ((state as AgentState.Failed).reason == com.pcremote.agent.FailReason.REVOKED) R.string.pcr_conn_revoked else R.string.pcr_pad_retry),
+                        color = c.bad, style = MaterialTheme.typography.labelMedium)
+                }
+                !online -> Text(stringResource(R.string.pcr_conn_connecting), color = c.warn, style = MaterialTheme.typography.labelMedium)
+                !hasGyro -> Text(stringResource(R.string.pcr_pad_no_gyro), color = c.textDim, style = MaterialTheme.typography.labelSmall)
+            }
         }
     }
 }
@@ -272,9 +290,12 @@ private fun GyroInput(use: GyroUse, sensitivity: Float, onStick: (Float, Float) 
 @Composable
 private fun Rumble(session: AgentSession?) {
     val ctx = LocalContext.current
-    LaunchedEffect(session) {
-        val vib: Vibrator? = if (Build.VERSION.SDK_INT >= 31) ctx.getSystemService(VibratorManager::class.java)?.defaultVibrator
+    val vib: Vibrator? = remember {
+        if (Build.VERSION.SDK_INT >= 31) ctx.getSystemService(VibratorManager::class.java)?.defaultVibrator
         else @Suppress("DEPRECATION") ctx.getSystemService(Vibrator::class.java)
+    }
+    DisposableEffect(Unit) { onDispose { vib?.cancel() } } // stop rumbling when leaving the pad
+    LaunchedEffect(session) {
         session?.conn?.incoming?.collect { m ->
             if (m is Msg.Rumble && vib?.hasVibrator() == true) {
                 val amp = maxOf(m.lo, m.hi)

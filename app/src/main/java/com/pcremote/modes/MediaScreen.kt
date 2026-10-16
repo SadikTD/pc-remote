@@ -43,10 +43,10 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 @Composable
-fun MediaScreen(pcId: String, onBack: () -> Unit, onPower: () -> Unit) {
+fun MediaScreen(pcId: String, onBack: () -> Unit) {
     val session = rememberAgentSession(pcId)
     var media by remember { mutableStateOf(Msg.Media()) }
-    ModeScaffold(R.string.pcr_mode_media, session, onBack, onPower) { state ->
+    ModeScaffold(R.string.pcr_mode_media, session, onBack) { state ->
         val online = state is AgentState.Online
         val send: (Msg) -> Unit = remember(session) { { m: Msg -> session?.send(m); Unit } }
         LaunchedEffect(online) { if (online) session?.send(Msg.MediaSub(true)) }

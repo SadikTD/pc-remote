@@ -56,7 +56,7 @@ class ShareToPcActivity : ComponentActivity() {
                             }
                         }
                     }
-                    else -> FilesScreen(chosen!!, onBack = ::finish, onPower = {}, initial = uris)
+                    else -> FilesScreen(chosen!!, onBack = ::finish, showPower = false, initial = uris)
                 }
             }
         }

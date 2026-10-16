@@ -19,6 +19,8 @@ data class PcCardUi(
     /** Paired only through Moonlight's PIN flow (no PC Remote Host). */
     val legacy: Boolean,
     val moonlightUuid: String?,
+    /** The host advertises power actions. */
+    val canPower: Boolean = false,
 )
 
 object HomeModel {
@@ -51,7 +53,8 @@ object HomeModel {
                 pc.macs.isNotEmpty() || m?.hasMac == true -> PrimaryAction.WAKE
                 else -> PrimaryAction.OFFLINE_HELP
             }
-            PcCardUi(pc.id, pc.name, online, streaming[pc.id] == true, modes, primary, false, pc.moonlightUuid)
+            PcCardUi(pc.id, pc.name, online, streaming[pc.id] == true, modes, primary, false, pc.moonlightUuid,
+                canPower = st is AgentState.Online && "power" in st.caps)
         }
         val legacyCards = ml.filter { it.uuid !in linked }.map { m ->
             val primary = when (m.online) {

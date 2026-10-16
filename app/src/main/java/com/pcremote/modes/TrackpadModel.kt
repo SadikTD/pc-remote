@@ -40,6 +40,7 @@ class TrackpadModel(private val speed: Float = 1f, private val natural: Boolean 
         lastMove = t
         return when (pointers.size) {
             1 -> {
+                if (maxPointers > 1) return emptyList() // leftover finger of a scroll/right-click
                 val v = hypot(dx, dy) / (dt / 1000f) // px/s
                 val gain = speed * (1f + ((v - ACCEL_START) / ACCEL_RANGE).coerceIn(0f, ACCEL_MAX))
                 fx += dx * gain; fy += dy * gain

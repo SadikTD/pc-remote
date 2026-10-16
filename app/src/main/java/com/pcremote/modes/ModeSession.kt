@@ -68,7 +68,7 @@ fun ModeScaffold(
     title: Int,
     session: AgentSession?,
     onBack: () -> Unit,
-    onPower: (() -> Unit)? = null,
+    showPower: Boolean = true,
     content: @Composable ColumnScope.(AgentState) -> Unit,
 ) {
     val c = LocalMidnight.current
@@ -90,7 +90,7 @@ fun ModeScaffold(
             }
             var power by remember { mutableStateOf(false) }
             if (power && session != null) PowerSheet(session.pc.name, { session.send(it) }) { power = false }
-            if (onPower != null && state is AgentState.Online && "power" in (state as AgentState.Online).caps) IconButton({ power = true }) { Icon(Icons.Rounded.PowerSettingsNew, stringResource(R.string.pcr_power), tint = c.text) }
+            if (showPower && state is AgentState.Online && "power" in (state as AgentState.Online).caps) IconButton({ power = true }) { Icon(Icons.Rounded.PowerSettingsNew, stringResource(R.string.pcr_power), tint = c.text) }
         }
         AnimatedVisibility(state !is AgentState.Online) {
             val msg = when ((state as? AgentState.Failed)?.reason) {
