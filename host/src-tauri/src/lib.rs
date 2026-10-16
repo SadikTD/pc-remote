@@ -11,6 +11,7 @@ pub mod notify;
 pub mod pad;
 pub mod power;
 pub mod proto;
+pub mod prs;
 pub mod store;
 pub mod sunshine;
 pub mod thumb;

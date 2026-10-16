@@ -37,12 +37,12 @@ All integers are big-endian.
 | Bytes | Field |
 |---|---|
 | 0 | `VT`: version (high 4 bits, = 1) and type (low 4 bits) |
-| 1 | `flags`: for VIDEO/FEC packets, the number of parity shards `m`; 0 otherwise |
-| 2–3 | reserved, 0 |
+| 1 | `flags`: for VIDEO/FEC packets, the frame's FEC percentage `p` (5–50); 0 otherwise |
+| 2–3 | `k`: for VIDEO/FEC packets, the number of data shards in the whole frame; 0 otherwise |
 | 4–7 | `seq`: per-direction packet counter starting at 0, incremented for every packet sent |
 | 8–11 | `frameId`: video frame number (VIDEO/FEC), audio packet number (AUDIO), otherwise 0 |
-| 12–13 | `frag`: shard index (VIDEO/FEC), otherwise 0 |
-| 14–15 | `count`: total shards `n = k + m` (VIDEO/FEC), otherwise 0 |
+| 12–13 | `frag`: shard index within the frame, in layout order (VIDEO/FEC), otherwise 0 |
+| 14–15 | `count`: total shards in the frame, data plus parity (VIDEO/FEC), otherwise 0 |
 
 - **Encryption:** AES-256-GCM. The nonce (12 B) is `session` (4 B) ‖ `dir` (1 B: 0 = host→phone, 1 = phone→host) ‖ `00 00 00` ‖ `seq` (4 B). The AAD is the 16-byte header. Packets that fail authentication are dropped silently.
 - **Size:** a whole UDP payload is ≤ 1200 bytes, so plaintext is ≤ **1168** bytes.
@@ -71,12 +71,14 @@ All integers are big-endian.
   | `codec` | u8 | 1 = H.264, 2 = HEVC, 3 = AV1 |
   | reserved | u16 | 0 |
 
-- **Shards:** the payload is split into `k = ceil((16 + len) / 1152)` shards of 1152 bytes, with the last zero-padded.
-- **Parity:** `m` parity shards are computed with **Reed-Solomon over GF(2⁸)**, identical to Backblaze JavaReedSolomon and the Rust `reed-solomon-erasure` crate's `galois_8::ReedSolomon`:
+- **Shards:** the payload is split into `k = max(1, ceil((16 + len) / 1152))` shards of 1152 bytes, with the last zero-padded.
+- **Blocks:** the data shards are grouped into FEC blocks of at most **64** data shards each, in order; only the last block can be smaller. Each block `b` with `k_b` data shards gets `m_b = max(1, ceil(k_b × p / 100))` parity shards.
+- **Layout:** block 0 data, block 0 parity, block 1 data, block 1 parity, and so on. `frag` numbers shards in this order, `count` is the grand total, and the header's `k` and `p` let the receiver derive the same layout.
+- **Parity:** computed per block with **Reed-Solomon over GF(2⁸)**, identical to Backblaze JavaReedSolomon and the Rust `reed-solomon-erasure` crate's `galois_8::ReedSolomon`:
   - polynomial `0x11D`, generator 2;
   - systematic encoding matrix = Vandermonde(n×k) × inverse(top k×k).
-- **Shard limits:** `n = k + m ≤ 255`, and `m = ceil(k × fecPercent / 100)` with `fecPercent` between 5 and 50 (default 15).
-- **Recovery:** any `k` of the `n` shards rebuild the frame. If a frame can't be rebuilt within 50 ms of its first shard (or a later frame completes first), the phone drops it and keeps decoding.
+- **FEC percentage:** `p` defaults to 15, and the host adapts it between 5 and 50.
+- **Recovery:** any `k_b` of a block's `k_b + m_b` shards rebuild that block. If a frame can't be rebuilt within 50 ms of its first shard (or a later frame completes first), the phone drops it and keeps decoding.
 - **Keyframe on loss:** after a dropped frame the phone sends IDR, at most once per 250 ms, and the host answers with a keyframe. There are no periodic keyframes.
 
 ### Audio
