@@ -126,6 +126,16 @@ The host releases every key and button that is still held when a connection clos
 - `status` is pushed whenever Sunshine streaming starts or stops.
 - `public` is null when unknown.
 
+## Streaming (cap `stream`)
+Session setup for the real-time media channel: `stream.start`, `stream.ready`, `stream.stop`, `stream.error` and `cursor.shape`. See `docs/stream-protocol.md` (PRS over UDP). Absolute pointer input, used by direct-touch streaming, is added:
+```json
+→ {"t":"mouse.pos","x":0.5,"y":0.25}
+```
+`x` and `y` are 0..1 fractions of the streamed display.
+
+## LAN discovery
+The host advertises mDNS `_pcremote._udp.local`, port 47999, with TXT `id=<PcInfo.id>`, `v=2` and `name=<pc name>`.
+
 ## Errors
 ```json
 {"t":"error","code":"<code>","msg":"<human readable>","of":"<request t, optional>"}
