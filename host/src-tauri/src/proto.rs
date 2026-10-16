@@ -71,9 +71,14 @@ pub enum ClientMsg {
         max_kbps: u32,
         #[serde(default, deserialize_with = "null_as_default")]
         audio: bool,
+        /// The phone's PRS socket addresses (docs/remote-protocol.md).
+        #[serde(default, deserialize_with = "null_as_default")]
+        cands: Vec<String>,
     },
     #[serde(rename = "stream.stop")]
     StreamStop,
+    #[serde(rename = "stream.cand")]
+    StreamCand { c: String },
 }
 
 /// The phone may send `null` for optional fields; treat it like an absent field.
@@ -124,6 +129,7 @@ impl ClientMsg {
             ClientMsg::MousePos { .. } => "mouse.pos",
             ClientMsg::StreamStart { .. } => "stream.start",
             ClientMsg::StreamStop => "stream.stop",
+            ClientMsg::StreamCand { .. } => "stream.cand",
         }
     }
 }
@@ -175,13 +181,16 @@ pub enum ServerMsg {
     #[serde(rename = "status")]
     Status { streaming: bool, to: String },
     #[serde(rename = "stream.ready")]
-    StreamReady { codec: String, w: u32, h: u32, fps: u32, port: u16, session: u32, key: String },
+    StreamReady { codec: String, w: u32, h: u32, fps: u32, port: u16, session: u32, key: String, cands: Vec<String> },
     #[serde(rename = "stream.error")]
     StreamError { code: String, msg: String },
     #[serde(rename = "cursor.shape")]
     CursorShape { png: String, hx: i32, hy: i32 },
     #[serde(rename = "net")]
     Net { lan: Vec<String>, public: Option<String>, anywhere: bool, upnp: bool },
+    /// How to reach this PC through the rendezvous Worker (docs/remote-protocol.md).
+    #[serde(rename = "remote")]
+    Remote { url: String, dev: String, ticket: String },
 }
 
 impl ServerMsg {
@@ -353,13 +362,22 @@ mod tests {
     fn stream_messages() {
         assert_eq!(
             c(r#"{"t":"stream.start","w":1920,"h":1080,"fps":60,"codecs":["hevc","h264"],"maxKbps":40000,"audio":true}"#),
-            ClientMsg::StreamStart { w: 1920, h: 1080, fps: 60, codecs: vec!["hevc".into(), "h264".into()], max_kbps: 40000, audio: true }
+            ClientMsg::StreamStart { w: 1920, h: 1080, fps: 60, codecs: vec!["hevc".into(), "h264".into()], max_kbps: 40000, audio: true, cands: vec![] }
+        );
+        assert_eq!(
+            c(r#"{"t":"stream.start","codecs":["h264"],"cands":["192.168.0.5:40000","198.51.100.2:6000"]}"#),
+            ClientMsg::StreamStart { w: 0, h: 0, fps: 0, codecs: vec!["h264".into()], max_kbps: 0, audio: false, cands: vec!["192.168.0.5:40000".into(), "198.51.100.2:6000".into()] }
+        );
+        assert_eq!(c(r#"{"t":"stream.cand","c":"203.0.113.9:3478"}"#), ClientMsg::StreamCand { c: "203.0.113.9:3478".into() });
+        assert_eq!(
+            s(&ServerMsg::Remote { url: "wss://w".into(), dev: "d".into(), ticket: "t".into() }),
+            serde_json::json!({"t":"remote","url":"wss://w","dev":"d","ticket":"t"})
         );
         assert_eq!(c(r#"{"t":"stream.stop"}"#), ClientMsg::StreamStop);
         assert_eq!(c(r#"{"t":"mouse.pos","x":1.5,"y":0.25}"#).sanitize(), ClientMsg::MousePos { x: 1.0, y: 0.25 });
         assert_eq!(
-            s(&ServerMsg::StreamReady { codec: "hevc".into(), w: 1920, h: 1080, fps: 60, port: 51234, session: 3735928559, key: "k".into() }),
-            serde_json::json!({"t":"stream.ready","codec":"hevc","w":1920,"h":1080,"fps":60,"port":51234,"session":3735928559u32,"key":"k"})
+            s(&ServerMsg::StreamReady { codec: "hevc".into(), w: 1920, h: 1080, fps: 60, port: 51234, session: 3735928559, key: "k".into(), cands: vec!["192.168.0.126:51234".into()] }),
+            serde_json::json!({"t":"stream.ready","codec":"hevc","w":1920,"h":1080,"fps":60,"port":51234,"session":3735928559u32,"key":"k","cands":["192.168.0.126:51234"]})
         );
         assert_eq!(
             s(&ServerMsg::StreamError { code: "busy".into(), msg: "m".into() }),
