@@ -104,13 +104,25 @@ class Receiver(
     fun stop() {
         if (!running) return
         running = false
+        outbox.shutdown()
         send(Header(Prs.BYE), ByteArray(0))
         transport.close()
     }
 
-    fun requestIdr() = send(Header(Prs.IDR), ByteArray(0))
+    /** Callers may be on the main thread, where Android forbids network I/O: hand off to [outbox]. */
+    private val outbox = java.util.concurrent.Executors.newSingleThreadExecutor { Thread(it, "pcr-tx").apply { priority = Thread.MAX_PRIORITY } }
 
-    fun sendInput(m: Msg) = send(Header(Prs.INPUT), input.payload(m))
+    private fun later(f: () -> Unit) { runCatching { outbox.execute(f) } } // rejected once stopped: nothing to send to
+
+    /** Waits until everything handed to the sender has gone out (tests). */
+    internal fun flush() { runCatching { outbox.submit {}.get() } }
+
+    fun requestIdr() = later { send(Header(Prs.IDR), ByteArray(0)) }
+
+    fun sendInput(m: Msg) {
+        val payload = input.payload(m) // ids assigned in call order
+        later { send(Header(Prs.INPUT), payload) }
+    }
 
     /** Converts a host capture timestamp to our clock (PROBE-estimated offset). */
     fun hostToLocalUs(hostUs: Long) = hostUs - offsetUs

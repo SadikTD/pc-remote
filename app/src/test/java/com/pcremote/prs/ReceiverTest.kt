@@ -163,6 +163,7 @@ class ReceiverTest {
 
     @Test fun sendsLastThreeEvents() {
         for (dx in 1..4) r.sendInput(Msg.MouseMove(dx, 0))
+        r.flush()
         val sent = sentOf(Prs.INPUT).map { Json.parseToJsonElement(String(it.second)).jsonArray }
         assertEquals(listOf(1, 2, 3, 3), sent.map { it.size })
         assertEquals(listOf(2L, 3L, 4L), sent.last().map { it.jsonObject["i"]!!.jsonPrimitive.long })
