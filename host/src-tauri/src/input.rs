@@ -148,7 +148,13 @@ impl Emitter for SendInputEmitter {
     fn emit(&mut self, evs: &[Ev]) {
         let inputs: Vec<INPUT> = evs.iter().map(to_input).collect();
         // SAFETY: `inputs` is a valid slice of initialised INPUT structs.
-        unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
+        let sent = unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
+        if sent as usize != inputs.len() {
+            static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+            if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                crate::log::line(&format!("input: SendInput injected {sent}/{} ({:?})", inputs.len(), std::io::Error::last_os_error()));
+            }
+        }
     }
 }
 

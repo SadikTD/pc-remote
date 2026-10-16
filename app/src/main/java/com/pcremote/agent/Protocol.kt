@@ -61,6 +61,17 @@ sealed interface Msg {
     @Serializable @SerialName("thumb.sub") data class ThumbSub(val on: Boolean) : Msg
     @Serializable @SerialName("status") data class Status(val streaming: Boolean, val to: String? = null) : Msg
 
+    @Serializable @SerialName("mouse.pos") data class MousePos(val x: Float, val y: Float) : Msg
+    @Serializable @SerialName("stream.start") data class StreamStart(
+        val w: Int, val h: Int, val fps: Int, val codecs: List<String>, val maxKbps: Int, val audio: Boolean = true,
+    ) : Msg
+    @Serializable @SerialName("stream.ready") data class StreamReady(
+        val codec: String, val w: Int, val h: Int, val fps: Int, val port: Int, val session: Long, val key: String,
+    ) : Msg
+    @Serializable @SerialName("stream.stop") data object StreamStop : Msg
+    @Serializable @SerialName("stream.error") data class StreamError(val code: String, val msg: String = "") : Msg
+    @Serializable @SerialName("cursor.shape") data class CursorShape(val png: String, val hx: Int, val hy: Int) : Msg
+
     /** Client request `{"t":"net"}`; shares its type name with the [Net] reply, so [Wire] handles it. */
     data object NetReq : Msg
     @Serializable @SerialName("net") data class Net(

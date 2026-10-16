@@ -487,4 +487,13 @@
     <string name="pcr_scan_hint">Point at the code on your PC</string>
     <string name="pcr_scan_need_camera">PC Remote needs the camera to scan the pairing code on your PC.</string>
     <string name="pcr_scan_allow">Allow camera</string>
+    <string name="pcr_s2_err_title">Couldn\'t start the screen</string>
+    <string name="pcr_s2_err_no_encoder">Your PC has no hardware video encoder available. Update its graphics driver and try again.</string>
+    <string name="pcr_s2_err_capture">Your PC couldn\'t capture its screen. If a login or admin (UAC) prompt is showing, answer it on the PC and retry.</string>
+    <string name="pcr_s2_err_busy">Another phone is already showing this PC\'s screen.</string>
+    <string name="pcr_s2_err_timeout">Your PC didn\'t answer. Make sure PC Remote is running on it and retry.</string>
+    <string name="pcr_s2_err_no_decoder">This phone couldn\'t decode the video from your PC.</string>
+    <string name="pcr_s2_retry">Retry</string>
+    <string name="pcr_s2_back">Back</string>
+    <string name="pcr_s2_perf">%1$s · %2$d×%3$d · %4$d fps · %5$.1f Mbps\nLatency %6$d ms · RTT %7$d ms · loss %8$.1f%%</string>
 </resources>

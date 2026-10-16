@@ -103,6 +103,7 @@ pub fn control(sh: &Shared, input: &mut dyn FnMut(ClientMsg), br: &mut Bitrate, 
     let start = Instant::now();
     let (mut last_rx, mut last_idr, mut probe_seq) = (Instant::now(), None::<Instant>, None::<u32>);
     let mut dedup = Dedup::default();
+    let (mut input_pkts, mut input_log) = (0u64, Instant::now());
     let mut buf = [0u8; 2048];
     while !sh.stopped() && last_rx.elapsed() < timeout {
         // Errors include Windows' WSAECONNRESET after an ICMP "port unreachable": keep going.
@@ -121,7 +122,15 @@ pub fn control(sh: &Shared, input: &mut dyn FnMut(ClientMsg), br: &mut Bitrate, 
                 reply[8..].copy_from_slice(&p[..8]);
                 sh.send(hdr(Type::Probe, 0), &reply);
             }
-            Type::Input => dedup.take(&p).into_iter().for_each(&mut *input),
+            Type::Input => {
+                let evs = dedup.take(&p);
+                if input_log.elapsed() >= Duration::from_secs(5) || input_pkts == 0 {
+                    crate::log::line(&format!("stream: input packet {} bytes, {} new events (packets so far {input_pkts})", p.len(), evs.len()));
+                    input_log = Instant::now();
+                }
+                input_pkts += 1;
+                evs.into_iter().for_each(&mut *input)
+            }
             Type::Report => {
                 if let Some(t) = parse_report(&p).and_then(|(loss, rtt)| br.on_report(start.elapsed(), loss, rtt)) {
                     *sh.target.lock().unwrap() = t;

@@ -183,7 +183,7 @@ private fun ColumnScope.RemoteBody(send: (Msg) -> Unit) {
 
 /** Invisible field that forwards soft-keyboard typing to the PC. */
 @Composable
-private fun TypingField(send: (Msg) -> Unit, bar: KeyboardBarModel, onBarChanged: () -> Unit) {
+internal fun TypingField(send: (Msg) -> Unit, bar: KeyboardBarModel, onBarChanged: () -> Unit) {
     val c = LocalMidnight.current
     val focus = remember { FocusRequester() }
     val kb = LocalSoftwareKeyboardController.current

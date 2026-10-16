@@ -18,8 +18,9 @@ interface Transport {
     fun close()
 }
 
-class UdpTransport(host: InetAddress, port: Int) : Transport {
-    private val peer = InetSocketAddress(host, port)
+/** Resolves `host` on first use, so it can be built on the main thread. */
+class UdpTransport(private val host: String, private val port: Int) : Transport {
+    private val peer by lazy { InetSocketAddress(InetAddress.getByName(host), port) }
     private val sock = DatagramSocket().apply { receiveBufferSize = 4 shl 20 }
     private val pkt = DatagramPacket(ByteArray(0), 0)
 
@@ -39,7 +40,7 @@ class UdpTransport(host: InetAddress, port: Int) : Transport {
 
 data class AudioPacket(val id: Int, val captureUs: Long, val opus: ByteArray)
 data class Cursor(val x: Int, val y: Int, val visible: Boolean)
-data class Stats(val rttMs: Int = 0, val lossPct: Float = 0f, val kbps: Int = 0, val fps: Int = 0, val dropped: Int = 0, val jitterMs: Int = 0)
+data class Stats(val rttMs: Int = 0, val lossPct: Float = 0f, val kbps: Int = 0, val fps: Int = 0, val dropped: Int = 0, val jitterMs: Int = 0, val decodeMs: Int = 0)
 
 interface ReceiverListener {
     fun onFrame(f: Frame)
@@ -152,7 +153,7 @@ class Receiver(
         if (nowUs - lastStatsUs >= 1_000_000) {
             val secs = (nowUs - lastStatsUs) / 1e6
             _stats.value = Stats((rttUs / 1000).toInt(), lossPermille / 10f, (statBytes * 8 / 1000 / secs).toInt(),
-                (statFrames / secs).toInt(), assembler.dropped, (jitterUs / 1000).toInt())
+                (statFrames / secs).toInt(), assembler.dropped, (jitterUs / 1000).toInt(), decodeMs)
             lastStatsUs = nowUs; statFrames = 0; statBytes = 0
         }
     }

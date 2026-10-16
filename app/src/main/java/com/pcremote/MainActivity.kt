@@ -117,6 +117,9 @@ class MainActivity : ComponentActivity() {
                             onManual = { startActivity(Intent(this@MainActivity, PcListActivity::class.java)) },
                             onSkip = ::finishOnboarding)
                     }
+                    composable(Routes.modePattern(Mode.SCREEN)) { e ->
+                        com.pcremote.stream2.StreamScreen(modeId(e), onBack = { nav.popBackStack() })
+                    }
                     composable(Routes.modePattern(Mode.REMOTE)) { e ->
                         com.pcremote.modes.RemoteScreen(modeId(e), onBack = { nav.popBackStack() })
                     }
@@ -146,13 +149,18 @@ class MainActivity : ComponentActivity() {
                         }
                         HomeScreen(cards, thumbs, IMPLEMENTED_MODES, HomeActions(
                             open = { card, mode ->
-                                if (mode == Mode.SCREEN) openMode(card.moonlightUuid, mode) else nav.navigate(Routes.mode(card.id, mode))
+                                // v1 hosts (Moonlight/Sunshine) only for legacy cards; our engine otherwise
+                                if (mode == Mode.SCREEN && card.legacy) openMode(card.moonlightUuid, mode) else nav.navigate(Routes.mode(card.id, mode))
                             },
                             primary = { card ->
                                 when (card.primary) {
                                     PrimaryAction.OPEN -> {
                                         val m = card.modes.firstOrNull { it in IMPLEMENTED_MODES }
-                                        if (m != null) openMode(card.moonlightUuid, m) else manualPairing()
+                                        when {
+                                            m == null -> manualPairing()
+                                            m == Mode.SCREEN && card.legacy -> openMode(card.moonlightUuid, m)
+                                            else -> nav.navigate(Routes.mode(card.id, m))
+                                        }
                                     }
                                     PrimaryAction.WAKE -> wake(home.wolTarget(card))
                                     // A PC found on the network but not paired yet: pair by scanning its code

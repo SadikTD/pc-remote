@@ -25,6 +25,7 @@ data class PcCardUi(
 
 object HomeModel {
     private fun capModes(caps: Set<String>) = buildList {
+        if ("stream" in caps) add(Mode.SCREEN)
         if ("input" in caps) add(Mode.REMOTE)
         if ("media" in caps) add(Mode.MEDIA)
         if ("input" in caps) add(Mode.SLIDES)
@@ -44,8 +45,9 @@ object HomeModel {
             val st = live[pc.id]
             val agentOnline = st is AgentState.Online
             val screen = m != null && m.paired && m.online == true
-            val modes = (if (screen) listOf(Mode.SCREEN) else emptyList()) +
-                (if (st is AgentState.Online) capModes(st.caps) else emptyList())
+            val caps = (st as? AgentState.Online)?.caps.orEmpty()
+            // our own engine when the host has it; the Moonlight path only for v1 hosts
+            val modes = (if (screen && "stream" !in caps) listOf(Mode.SCREEN) else emptyList()) + capModes(caps)
             val online = agentOnline || m?.online == true
             val primary = when {
                 online -> PrimaryAction.OPEN
