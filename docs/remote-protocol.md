@@ -37,6 +37,7 @@ The phone stores it with the paired PC.
 | `GET /v1/host?pc=<id>&ts=<ts>&sig=<hex>[&register=<base64url relayKey>]` (WebSocket) | host | `sig = HMAC(relayKey, "host:" + pc + ":" + ts)` |
 | `GET /v1/phone?pc=<id>&dev=<deviceId>&ts=<ts>&sig=<hex>` (WebSocket) | phone | `sig = HMAC(ticket, "phone:" + pc + ":" + dev + ":" + ts)` |
 | `POST /v1/turn?pc=…&dev=…&ts=…&sig=…` | phone | same as `/v1/phone` |
+| `POST /v1/turn?role=host&pc=…&ts=…&sig=…` | host | same as `/v1/host` |
 
 - **Unknown PC on `/v1/host`:** with `register`, the Worker stores the key and accepts the connection, after checking the `sig` made with that key. Without `register`, it answers 401.
 - **Bad or stale auth:** 401.
@@ -91,7 +92,17 @@ The phone stores it with the paired PC.
   | `0x40`–`0x7F` | TURN ChannelData |
   | `0x1?` | PRS (version 1) |
 
-## TURN (phone only)
+## TURN (both ends)
+Carrier NATs can give the same PC (or phone) a different public IP for different destinations. A TURN permission is per exact IP, so the relay must talk relay-to-relay. Cloudflare routes that internally.
+- **Phone:** after 2.5 s without an authenticated packet, the phone allocates (below) and sends `stream.cand` with its relayed address.
+- **Host:** on the first `stream.cand` while it has no relay, the host fetches credentials (`/v1/turn?role=host`) and allocates on its stream socket. It then:
+  1. permits every phone candidate;
+  2. sends `{"t":"stream.cand","c":"<host relayed ip:port>"}` to the phone over the agent;
+  3. punches through its relay to the phone's relayed address.
+- **Phone, on the host's `stream.cand`:** adds the address as a target and permits it on its relay.
+- **Peer addresses:** each side treats packets that arrive through its relay (ChannelData or Data indication) as coming from the peer address inside them, and sends back the same way: ChannelData when a channel is bound, otherwise a Send indication.
+
+### TURN client details
 - **Server:** RFC 8656 over UDP to the first `turn:` URL with `transport=udp` from `/v1/turn` (normally `turn.cloudflare.com:3478`). Authentication uses long-term credentials:
   1. a 401 reply brings `REALM` and `NONCE`;
   2. `MESSAGE-INTEGRITY` uses key = `MD5(username ":" realm ":" password)`.
