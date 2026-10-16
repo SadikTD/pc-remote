@@ -102,9 +102,11 @@ fn supervise() {
 fn lock_down(dir: &std::path::Path) {
     use std::os::windows::process::CommandExt;
     let _ = std::fs::create_dir_all(dir);
-    let _ = std::process::Command::new("icacls.exe")
-        .arg(dir)
-        .args(["/inheritance:r", "/grant:r", "*S-1-5-18:(OI)(CI)F", "*S-1-5-32-544:(OI)(CI)F", "/T", "/Q"])
-        .creation_flags(0x0800_0000) // no console window
-        .status();
+    let icacls = |args: &[&std::ffi::OsStr]| {
+        let _ = std::process::Command::new("icacls.exe").args(args).creation_flags(0x0800_0000).status(); // no console window
+    };
+    // the folder: only these two, inherited by everything inside…
+    icacls(&[dir.as_os_str(), "/inheritance:r".as_ref(), "/grant:r".as_ref(), "*S-1-5-18:(OI)(CI)F".as_ref(), "*S-1-5-32-544:(OI)(CI)F".as_ref(), "/Q".as_ref()]);
+    // …and the files take exactly that (older ones may carry the user's permissions)
+    icacls(&[dir.join("*").as_os_str(), "/reset".as_ref(), "/T".as_ref(), "/C".as_ref(), "/Q".as_ref()]);
 }

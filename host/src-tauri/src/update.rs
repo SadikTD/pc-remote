@@ -97,3 +97,16 @@ mod tests {
         assert!(!verify(b"hello", "garbage", PK));
     }
 }
+
+#[cfg(test)]
+mod release_check {
+    /// `PCR_CHECK_EXE=… cargo test release_signature -- --ignored`: the built installer verifies with the built-in key.
+    #[test]
+    #[ignore]
+    fn release_signature() {
+        let exe = std::env::var("PCR_CHECK_EXE").unwrap();
+        let data = std::fs::read(&exe).unwrap();
+        let sig = std::fs::read_to_string(format!("{exe}.sig")).unwrap();
+        assert!(super::verify(&data, &sig, super::PUBKEY));
+    }
+}

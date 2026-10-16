@@ -4,9 +4,10 @@ const TTL = 120;
 
 function status(s: State): [string, string] {
   const n = s.devices.filter((d) => d.connected).length;
-  if (n === 1) return ["live", "Remote connected"];
+  if (s.locked && n) return ["warn", "Locked, phone connected"];
+  if (n === 1) return ["live", "Phone connected"];
   if (n > 1) return ["live", `${n} phones connected`];
-  return ["ok", "Ready"];
+  return ["ok", "Ready for your phone"];
 }
 
 export function home(state: State): HTMLElement {
@@ -18,9 +19,8 @@ export function home(state: State): HTMLElement {
   ring.setAttribute("class", "ring");
   ring.setAttribute("viewBox", "0 0 260 260");
   ring.innerHTML =
-    '<defs><linearGradient id="rg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7C8CFF"/><stop offset="1" stop-color="#4FD1FF"/></linearGradient></defs>' +
-    '<rect class="track" x="3" y="3" width="254" height="254" rx="30" pathLength="1"/>' +
-    '<rect class="bar" x="3" y="3" width="254" height="254" rx="30" pathLength="1"/>';
+    '<rect class="track" x="3" y="3" width="254" height="254" rx="34" pathLength="1"/>' +
+    '<rect class="bar" x="3" y="3" width="254" height="254" rx="34" pathLength="1"/>';
 
   let link = "";
   const copy = h("button.ghost", {
@@ -53,18 +53,20 @@ export function home(state: State): HTMLElement {
   refresh();
 
   const connected = state.devices.filter((d) => d.connected);
+  const send = (id: string, folder: boolean) => invoke("send_file", { device: id, folder });
   return h(
     "section.view.home",
     {},
-    h("h1.pc", {}, state.name),
-    h(`span.pill.${tone}`, {}, h("i.dot"), text),
+    h("div.hero", {},
+      h(`span.pill.${tone}`, {}, h("i.dot"), text),
+      h("h1.pc", {}, state.name)),
     h("div.code", {}, ring, qr),
-    h("p.lead", {}, "Open PC Remote on your phone and scan this code."),
-    left,
-    copy,
+    h("p.lead", {}, "Scan with PC Remote on your phone, or with its camera."),
+    h("div.under", {}, left, copy),
     connected.length
-      ? h("ul.list.compact", {}, ...connected.map((d) => h("li.row", {}, h("i.dot.live"), h("span.grow", {}, d.name),
-          h("button.ghost", { onclick: () => invoke("send_file", { device: d.id }) }, "Send file"))))
+      ? h("ul.list.compact", {}, ...connected.map((d) => h("li.row", {}, h("i.dot.live"), h("span.grow.label", {}, d.name),
+          h("button.ghost", { onclick: () => send(d.id, false) }, "Send a file"),
+          h("button.ghost", { onclick: () => send(d.id, true) }, "Send folder"))))
       : null,
   );
 }

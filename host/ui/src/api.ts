@@ -4,7 +4,7 @@ declare global {
   interface Window {
     __TAURI__: {
       core: { invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> };
-      event: { listen(name: string, cb: () => void): Promise<() => void> };
+      event: { listen<T>(name: string, cb: (e: { payload: T }) => void): Promise<() => void> };
       window: { getCurrentWindow(): { minimize(): Promise<void>; close(): Promise<void> } };
     };
   }
@@ -15,11 +15,11 @@ const LOCAL = new Set(["send_file", "pick_files_dir", "open_files_dir", "open_re
 
 export const invoke = <T>(cmd: string, args?: Record<string, unknown>) =>
   LOCAL.has(cmd) ? window.__TAURI__.core.invoke<T>(cmd, args) : window.__TAURI__.core.invoke<T>("call", { cmd, args: args ?? null });
-export const listen = (name: string, cb: () => void) => window.__TAURI__.event.listen(name, cb);
+export const listen = <T = unknown>(name: string, cb: (payload: T) => void) => window.__TAURI__.event.listen<T>(name, (e) => cb(e.payload));
 export const appWindow = () => window.__TAURI__.window.getCurrentWindow();
 
 export interface Device { id: string; name: string; connected: boolean }
-export interface State { name: string; devices: Device[] }
+export interface State { name: string; devices: Device[]; locked: boolean }
 export interface Config {
   autostart: boolean; display: string; max_quality: string;
   allow_files: boolean; allow_clip: boolean; anywhere: boolean; files_dir: string;

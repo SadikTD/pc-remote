@@ -9,8 +9,8 @@ export function about(): HTMLElement {
     try {
       const u = await invoke<Update>("check_update");
       if (u.newer) {
-        result.replaceChildren(`Version ${u.latest.replace(/^v/, "")} is available. `,
-          h("a", { href: "#", onclick: (e: Event) => { e.preventDefault(); invoke("open_release", { url: u.url }); } }, "Download it"));
+        result.replaceChildren(`Version ${u.latest.replace(/^v/, "")} is out. It installs by itself within a few hours. `,
+          h("a", { href: "#", onclick: (e: Event) => { e.preventDefault(); invoke("open_release", { url: u.url }); } }, "What's new"));
       } else {
         result.textContent = "You have the latest version.";
       }
@@ -25,7 +25,8 @@ export function about(): HTMLElement {
     h("img.logo", { src: "/icon.svg", alt: "", width: 72, height: 72 }),
     h("h2", {}, "PC Remote for Windows"),
     h("p.hint", {}, `Version ${__APP_VERSION__}`),
-    h("p.lead", {}, "Control this PC from your phone: screen, mouse, keyboard, media and power. Open source under GPL-3.0."),
+    h("p.lead", {}, "Control this PC from your phone, from anywhere: its screen, mouse, keyboard, files, media and power."),
+    h("p.hint", {}, "Updates install automatically. Open source under GPL-3.0."),
     check,
     result,
   );
