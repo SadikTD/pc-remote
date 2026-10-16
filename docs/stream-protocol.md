@@ -108,8 +108,9 @@ All integers are big-endian.
 - RTT is measured from the `echo` field.
 
 ### Adaptive bitrate (host)
-- Loss above 2% over 300 ms → bitrate × 0.75, and FEC up to 25%.
-- Loss below 0.5% and stable RTT for 2 s → bitrate × 1.08, up to `maxKbps`.
+- Loss above 2% over 300 ms → FEC up to 25% (50% above 10% loss), and bitrate × 0.75 when above 6 Mbps or when RTT shows queueing. Below 6 Mbps without queueing, loss is treated as random (radio) loss and answered with FEC only.
+- Streams start at 12 Mbps (or `maxKbps` if lower).
+- Loss below 0.5% and stable RTT for 1 s → bitrate × 1.10, up to `maxKbps`.
 - Smoothed RTT (EWMA, 1/8 per report) above the session minimum by more than max(30 ms, half the minimum), for 3 reports in a row → treated as congestion (× 0.85). Single jitter spikes don't count.
 - Clean for 4 s with at least 3× the floor → one resolution notch back up.
-- Floor 2 Mbps. At the floor for 3 s, the stream steps down one resolution notch (1080 → 900 → 720 → 540) and tells the phone with a new `stream.ready`, keeping the same `session`, `port` and `key`.
+- Floor 2 Mbps. Still queueing at the floor for 3 s, the stream steps down one resolution notch (1080 → 900 → 720 → 540) and tells the phone with a new `stream.ready`, keeping the same `session`, `port` and `key`.

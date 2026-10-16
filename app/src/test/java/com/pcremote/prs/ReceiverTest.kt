@@ -111,6 +111,16 @@ class ReceiverTest {
     }
     private fun sentOf(typ: Int) = t.sent.mapNotNull { host.open(Crypt.PHONE_TO_HOST, it) }.filter { it.first.typ == typ }
 
+    @Test fun punchingGapsBeforeVideoAreNotLoss() {
+        r.step(0)
+        // the host punched to other addresses: seqs 0..49 went elsewhere, one PROBE reached us
+        fromHost(Header(Prs.PROBE), ByteBuffer.allocate(16).putLong(1).putLong(0).array(), 1_000, seq = 50)
+        var seq = 60
+        for ((h, d) in packetize(1, true, ByteArray(3000))) fromHost(h, d, 2_000, seq++)
+        r.step(100_000)
+        assertEquals(0, ByteBuffer.wrap(sentOf(Prs.REPORT).last().second).getShort(4).toInt())
+    }
+
     @Test fun reportFieldsFromCounters() {
         r.step(0)
         val pkts = packetize(7, true, ByteArray(20_000), p = 50) // 18 data + 9 parity

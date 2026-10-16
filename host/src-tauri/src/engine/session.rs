@@ -41,6 +41,9 @@ pub struct Params {
     pub display: String,
 }
 
+/// Packet rate through a TURN relay (see `Shared::send_paced`).
+const RELAY_PPS: u64 = 3_000;
+
 /// The UDP port streams use when it's free (mapped on the router by `net`).
 pub const STREAM_PORT: u16 = 47998;
 
@@ -194,7 +197,22 @@ impl Shared {
     }
 
     /// One frame's packets, spread over at most ~4 ms so a burst doesn't overflow Wi-Fi queues.
+    /// Through a TURN relay, at most [`RELAY_PPS`] packets a second instead: relays drop bursts
+    /// above their packet-rate limit (Cloudflare: 5–10 kpps per allocation), which keyframes hit.
     fn send_paced(&self, pkts: &[(Header, Vec<u8>)]) {
+        if self.peer().is_some_and(|p| self.via_relay.lock().unwrap().contains(&p)) {
+            let t0 = Instant::now();
+            for (i, (h, p)) in pkts.iter().enumerate() {
+                let due = t0 + Duration::from_micros(i as u64 * 1_000_000 / RELAY_PPS);
+                if let Some(wait) = due.checked_duration_since(Instant::now()) {
+                    if wait > Duration::from_micros(500) {
+                        std::thread::sleep(wait);
+                    }
+                }
+                self.send(*h, p);
+            }
+            return;
+        }
         let groups = if pkts.len() <= 8 { 1 } else { 4 };
         let t0 = Instant::now();
         for (g, chunk) in pkts.chunks(pkts.len().div_ceil(groups).max(1)).enumerate() {
@@ -290,8 +308,13 @@ pub fn control(sh: &Shared, input: &mut dyn FnMut(ClientMsg), br: &mut Bitrate, 
                 evs.into_iter().for_each(&mut *input)
             }
             Type::Report => {
-                if let Some(t) = parse_report(&p).and_then(|(loss, rtt)| br.on_report(start.elapsed(), loss, rtt)) {
-                    *sh.target.lock().unwrap() = t;
+                if let Some((loss, rtt)) = parse_report(&p) {
+                    if let Some(t) = br.on_report(start.elapsed(), loss, rtt) {
+                        if t.notch != sh.target.lock().unwrap().notch || t.kbps * 4 < sh.target.lock().unwrap().kbps * 3 {
+                            crate::log::line(&format!("bitrate: {} kbps, fec {}%, notch {} (loss {loss}‰, rtt {rtt} ms)", t.kbps, t.fec, t.notch));
+                        }
+                        *sh.target.lock().unwrap() = t;
+                    }
                 }
             }
             Type::Idr if last_idr.is_none_or(|t| t.elapsed() >= IDR_EVERY) => {
@@ -495,8 +518,10 @@ impl StreamSession {
         if active.upgrade().is_some_and(|s| !s.stopped()) {
             return Err(err("busy", "another phone is streaming from this PC"));
         }
-        // The fixed port is the one UPnP maps for access from anywhere; any port works on the LAN.
-        let sock = UdpSocket::bind((bind, STREAM_PORT))
+        // The fixed port only matters when UPnP mapped it (access from anywhere). Otherwise a fresh
+        // port per stream: a relay keeps a killed run's allocation for its address pair (437).
+        let fixed = if p.public.is_some() { STREAM_PORT } else { 0 };
+        let sock = UdpSocket::bind((bind, fixed))
             .or_else(|_| UdpSocket::bind((bind, 0)))
             .map_err(|e| err("capture_failed", &e.to_string()))?;
         let port = sock.local_addr().map_err(|e| err("capture_failed", &e.to_string()))?.port();

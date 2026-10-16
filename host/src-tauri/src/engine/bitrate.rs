@@ -7,7 +7,13 @@ pub const FLOOR_KBPS: u32 = 2000;
 pub const NOTCHES: [u32; 4] = [1080, 900, 720, 540];
 
 const CUT_EVERY: Duration = Duration::from_millis(300);
-const RAISE_AFTER: Duration = Duration::from_secs(2);
+const RAISE_AFTER: Duration = Duration::from_secs(1);
+/// Streams start here (or at maxKbps if lower) and climb while the link is clean: starting at
+/// the cap floods slower paths (a relayed 4G link) before the first REPORT can react.
+pub const START_KBPS: u32 = 12_000;
+/// Below this, loss alone doesn't cut the bitrate: on lossy radio paths loss stays the same
+/// whatever the rate (it isn't congestion), so FEC answers it. Queueing (RTT) still cuts.
+pub const LOSS_CUT_ABOVE: u32 = 6_000;
 const STEP_DOWN_AFTER: Duration = Duration::from_secs(3);
 /// A notch back up once the link has been clean this long with room above the floor.
 const STEP_UP_AFTER: Duration = Duration::from_secs(4);
@@ -42,7 +48,7 @@ impl Bitrate {
     pub fn new(max_kbps: u32, max_notch: u8) -> Self {
         let max = max_kbps.max(500);
         Bitrate {
-            t: Target { kbps: max, fec: 15, notch: 0 },
+            t: Target { kbps: max.min(START_KBPS), fec: 15, notch: 0 },
             max,
             max_notch,
             loss: Vec::new(),
@@ -84,14 +90,21 @@ impl Bitrate {
         let can_cut = self.last_cut.is_none_or(|t| now.saturating_sub(t) >= CUT_EVERY);
 
         if self.loss.len() == 3 && avg_loss > 20 && can_cut {
-            self.cut(now, 0.75);
-            self.t.fec = self.t.fec.max(if avg_loss > 250 { 50 } else { 25 });
+            let fec = if avg_loss > 100 { 50 } else { 25 };
+            if congested || self.t.kbps > LOSS_CUT_ABOVE {
+                let floor = if congested { self.floor() } else { LOSS_CUT_ABOVE.min(self.max) };
+                self.cut(now, 0.75);
+                self.t.kbps = self.t.kbps.max(floor);
+            } else {
+                self.loss.clear(); // judged: random loss, answered with FEC
+            }
+            self.t.fec = self.t.fec.max(fec);
         } else if congested && can_cut {
             self.cut(now, 0.85);
         } else if loss_permille < 5 && !congested {
             let since = *self.good_since.get_or_insert(now);
             if now.saturating_sub(since) >= RAISE_AFTER {
-                self.t.kbps = ((self.t.kbps as f64 * 1.08) as u32).min(self.max);
+                self.t.kbps = ((self.t.kbps as f64 * 1.10) as u32).min(self.max);
                 self.t.fec = self.t.fec.saturating_sub(5).max(5);
                 self.good_since = Some(now);
             }
@@ -99,13 +112,15 @@ impl Bitrate {
             self.good_since = None;
         }
 
-        if self.t.kbps <= self.floor() {
+        let clean = loss_permille < 5 && !congested;
+        if self.t.kbps <= self.floor() && congested {
+            // still queueing at the floor: fewer pixels is the only lever left
             let since = *self.floor_since.get_or_insert(now);
             if now.saturating_sub(since) >= STEP_DOWN_AFTER && self.t.notch < self.max_notch {
                 self.t.notch += 1;
                 self.floor_since = Some(now);
             }
-        } else {
+        } else if self.t.kbps > self.floor() {
             self.floor_since = None;
             // recovered: clean for a while with at least 3x the floor -> a notch back up
             if loss_permille < 5 && !congested {
@@ -151,29 +166,35 @@ mod tests {
     }
 
     #[test]
+    fn starts_below_the_cap() {
+        assert_eq!(Bitrate::new(50000, 3).target().kbps, START_KBPS);
+        assert_eq!(Bitrate::new(8000, 3).target().kbps, 8000);
+    }
+
+    #[test]
     fn loss_over_300ms_cuts_by_quarter_and_raises_fec() {
-        let mut b = Bitrate::new(20000, 3);
+        let mut b = Bitrate::new(START_KBPS, 3);
         assert_eq!(b.on_report(ms(100), 30, 10), None, "one report is not 300 ms");
         assert_eq!(b.on_report(ms(200), 30, 10), None);
-        assert_eq!(b.on_report(ms(300), 30, 10), Some(Target { kbps: 15000, fec: 25, notch: 0 }));
+        assert_eq!(b.on_report(ms(300), 30, 10), Some(Target { kbps: 9000, fec: 25, notch: 0 }));
         // the window restarts after a cut
         assert_eq!(b.on_report(ms(400), 30, 10), None);
     }
 
     #[test]
-    fn stable_for_2s_raises_by_8_percent_up_to_max() {
+    fn stable_for_1s_raises_by_10_percent_up_to_max() {
         let mut b = Bitrate::new(20000, 3);
         for i in 1..=3 {
             b.on_report(ms(i * 100), 30, 10);
         }
-        assert_eq!(b.target().kbps, 15000);
+        assert_eq!(b.target().kbps, 9000);
         let mut t = 400;
-        while b.target().kbps == 15000 {
+        while b.target().kbps == 9000 {
             b.on_report(ms(t), 0, 10);
             t += 100;
         }
-        assert_eq!(b.target(), Target { kbps: 16200, fec: 20, notch: 0 });
-        assert!(t - 400 >= 2000, "raised after {} ms", t - 400);
+        assert_eq!(b.target(), Target { kbps: 9900, fec: 20, notch: 0 });
+        assert!(t - 400 >= 1000, "raised after {} ms", t - 400);
         for _ in 0..1000 {
             b.on_report(ms(t), 0, 10);
             t += 100;
@@ -194,7 +215,7 @@ mod tests {
                 cut_at = Some(t);
             }
         }
-        assert_eq!(b.target().kbps, 17000);
+        assert_eq!(b.target().kbps, 10200);
         assert!(cut_at.unwrap() >= 400, "needs the smoothed RTT high for 300 ms");
     }
 
@@ -206,17 +227,40 @@ mod tests {
             let rtt = if i % 4 == 0 { 110 } else { 50 };
             b.on_report(ms(i * 100), 0, rtt);
         }
-        assert_eq!(b.target().kbps, 20000);
+        assert_eq!(b.target().kbps, 20000, "climbs to the cap despite the spikes");
         assert_eq!(b.target().notch, 0);
+    }
+
+    #[test]
+    fn clean_at_the_floor_climbs_instead_of_stepping_down() {
+        let mut b = Bitrate::new(START_KBPS, 3);
+        b.on_report(ms(100), 0, 10);
+        let mut t = 100;
+        while b.target().kbps > FLOOR_KBPS {
+            t += 100;
+            b.on_report(ms(t), 100, 300);
+        }
+        // queueing gone: the smoothed RTT needs a few reports to settle back
+        for _ in 0..30 {
+            t += 100;
+            b.on_report(ms(t), 0, 10);
+        }
+        for _ in 0..50 {
+            t += 100;
+            b.on_report(ms(t), 0, 10);
+        }
+        assert_eq!(b.target().notch, 0);
+        assert!(b.target().kbps > FLOOR_KBPS);
     }
 
     #[test]
     fn resolution_steps_back_up_after_recovery() {
         let mut b = Bitrate::new(20000, 3);
-        let mut t = 0;
+        b.on_report(ms(100), 0, 10);
+        let mut t = 100;
         while b.target().notch == 0 {
             t += 100;
-            b.on_report(ms(t), 100, 10);
+            b.on_report(ms(t), 100, 300);
         }
         assert_eq!(b.target().notch, 1);
         let mut steps = 0;
@@ -229,26 +273,43 @@ mod tests {
     }
 
     #[test]
-    fn floor_then_step_down_after_3s() {
+    fn queueing_at_the_floor_steps_down_after_3s() {
         let mut b = Bitrate::new(4000, 3);
-        let mut t = 0;
+        b.on_report(ms(100), 0, 10);
+        let mut t = 100;
         while b.target().kbps > FLOOR_KBPS {
             t += 100;
-            b.on_report(ms(t), 100, 10);
+            b.on_report(ms(t), 100, 300);
         }
-        assert_eq!(b.target().kbps, FLOOR_KBPS);
         let at_floor = t;
         while b.target().notch == 0 {
             t += 100;
-            b.on_report(ms(t), 100, 10);
+            b.on_report(ms(t), 100, 300);
         }
         assert_eq!(t - at_floor, 3000);
         assert_eq!(b.target().kbps, FLOOR_KBPS);
         for _ in 0..200 {
             t += 100;
-            b.on_report(ms(t), 100, 10);
+            b.on_report(ms(t), 100, 300);
         }
         assert_eq!(b.target().notch, 3, "stops at the last notch");
+    }
+
+    #[test]
+    fn random_loss_raises_fec_and_keeps_the_picture() {
+        // 10% loss on a radio path, no queueing: cut to the loss-insensitive rate, then hold with FEC
+        let mut b = Bitrate::new(START_KBPS, 3);
+        for i in 1..=300u64 {
+            b.on_report(ms(i * 100), 100, 30);
+        }
+        assert_eq!(b.target().kbps, LOSS_CUT_ABOVE);
+        assert_eq!(b.target().fec, 25);
+        assert_eq!(b.target().notch, 0);
+        for i in 301..=400u64 {
+            b.on_report(ms(i * 100), 200, 30);
+        }
+        assert_eq!(b.target().fec, 50);
+        assert_eq!(b.target().notch, 0);
     }
 
     #[test]

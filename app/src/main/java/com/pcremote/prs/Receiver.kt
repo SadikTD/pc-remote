@@ -107,9 +107,13 @@ class Receiver(
     internal fun onPacket(buf: ByteArray, len: Int, nowUs: Long) {
         val (h, plain) = crypt.open(Crypt.HOST_TO_PHONE, buf, len) ?: return
         transport.confirm()
-        if (maxSeq < 0) { maxSeq = h.seq; periodStartSeq = h.seq - 1 }
-        if (h.seq - maxSeq > 0) maxSeq = h.seq
-        periodReceived++
+        // Loss counts from the first video packet: before that the host punches to several
+        // addresses, and those PROBEs' sequence numbers never reach us (they'd look like loss).
+        if (maxSeq < 0 && (h.typ == Prs.VIDEO || h.typ == Prs.FEC)) { maxSeq = h.seq; periodStartSeq = h.seq - 1 }
+        if (maxSeq >= 0) {
+            if (h.seq - maxSeq > 0) maxSeq = h.seq
+            periodReceived++
+        }
         statBytes += len
         when (h.typ) {
             Prs.VIDEO, Prs.FEC -> { lastVideoUs = nowUs; assembler.onShard(h, plain, nowUs) }

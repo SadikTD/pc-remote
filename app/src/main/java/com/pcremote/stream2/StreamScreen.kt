@@ -274,7 +274,11 @@ private fun request(ctx: Context): StreamRequest {
         val p = com.pcremote.quality.QualityPrefs.current(ctx)
         return StreamRequest(minOf(w, p.width), minOf(h, p.height), p.fps, p.bitrateKbps)
     }
-    return StreamRequest(w, h, hz.toInt().coerceIn(30, 120), 50_000)
+    // On mobile data, cap the stream: it keeps a relayed 4G path inside its capacity and the data
+    // plan sane (8 Mbps ≈ 3.6 GB an hour). Wi-Fi gets up to 50 Mbps; the host adapts below that.
+    val cm = ctx.getSystemService(android.net.ConnectivityManager::class.java)
+    val cellular = cm?.getNetworkCapabilities(cm.activeNetwork)?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) == true
+    return StreamRequest(w, h, hz.toInt().coerceIn(30, if (cellular) 60 else 120), if (cellular) 8_000 else 50_000)
 }
 
 @Composable
