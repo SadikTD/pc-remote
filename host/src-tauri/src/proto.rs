@@ -56,11 +56,34 @@ pub enum ClientMsg {
     ThumbSub { on: bool },
     #[serde(rename = "net")]
     Net,
+    #[serde(rename = "mouse.pos")]
+    MousePos { x: f64, y: f64 },
+    #[serde(rename = "stream.start")]
+    StreamStart {
+        #[serde(default, deserialize_with = "null_as_default")]
+        w: u32,
+        #[serde(default, deserialize_with = "null_as_default")]
+        h: u32,
+        #[serde(default, deserialize_with = "null_as_default")]
+        fps: u32,
+        codecs: Vec<String>,
+        #[serde(rename = "maxKbps", default, deserialize_with = "null_as_default")]
+        max_kbps: u32,
+        #[serde(default, deserialize_with = "null_as_default")]
+        audio: bool,
+    },
+    #[serde(rename = "stream.stop")]
+    StreamStop,
 }
 
 /// The phone may send `null` for optional fields; treat it like an absent field.
 fn null_as_default<'de, D: serde::Deserializer<'de>, T: Default + Deserialize<'de>>(d: D) -> Result<T, D::Error> {
     Ok(Option::<T>::deserialize(d)?.unwrap_or_default())
+}
+
+/// 0..1, with NaN as 0.
+fn unit(v: f64) -> f64 {
+    if v.is_nan() { 0.0 } else { v.clamp(0.0, 1.0) }
 }
 
 impl ClientMsg {
@@ -69,6 +92,7 @@ impl ClientMsg {
         match self {
             ClientMsg::MouseMove { dx, dy } => ClientMsg::MouseMove { dx: dx.clamp(-2000, 2000), dy: dy.clamp(-2000, 2000) },
             ClientMsg::Text { s } => ClientMsg::Text { s: s.chars().take(1000).collect() },
+            ClientMsg::MousePos { x, y } => ClientMsg::MousePos { x: unit(x), y: unit(y) },
             m => m,
         }
     }
@@ -97,6 +121,9 @@ impl ClientMsg {
             ClientMsg::Power { .. } => "power",
             ClientMsg::ThumbSub { .. } => "thumb.sub",
             ClientMsg::Net => "net",
+            ClientMsg::MousePos { .. } => "mouse.pos",
+            ClientMsg::StreamStart { .. } => "stream.start",
+            ClientMsg::StreamStop => "stream.stop",
         }
     }
 }
@@ -147,6 +174,12 @@ pub enum ServerMsg {
     Ok { of: String },
     #[serde(rename = "status")]
     Status { streaming: bool, to: String },
+    #[serde(rename = "stream.ready")]
+    StreamReady { codec: String, w: u32, h: u32, fps: u32, port: u16, session: u32, key: String },
+    #[serde(rename = "stream.error")]
+    StreamError { code: String, msg: String },
+    #[serde(rename = "cursor.shape")]
+    CursorShape { png: String, hx: i32, hy: i32 },
     #[serde(rename = "net")]
     Net { lan: Vec<String>, public: Option<String>, anywhere: bool, upnp: bool },
 }
@@ -314,6 +347,25 @@ mod tests {
         assert_eq!(c(r#"{"t":"mouse.scroll","dy":120,"dx":null}"#), ClientMsg::MouseScroll { dy: 120, dx: 0 });
         assert_eq!(c(r#"{"t":"mouse.scroll","dx":-5}"#), ClientMsg::MouseScroll { dy: 0, dx: -5 });
         assert_eq!(c(r#"{"t":"media.cmd","c":"mute","v":null}"#), ClientMsg::MediaCmd { c: "mute".into(), v: None });
+    }
+
+    #[test]
+    fn stream_messages() {
+        assert_eq!(
+            c(r#"{"t":"stream.start","w":1920,"h":1080,"fps":60,"codecs":["hevc","h264"],"maxKbps":40000,"audio":true}"#),
+            ClientMsg::StreamStart { w: 1920, h: 1080, fps: 60, codecs: vec!["hevc".into(), "h264".into()], max_kbps: 40000, audio: true }
+        );
+        assert_eq!(c(r#"{"t":"stream.stop"}"#), ClientMsg::StreamStop);
+        assert_eq!(c(r#"{"t":"mouse.pos","x":1.5,"y":0.25}"#).sanitize(), ClientMsg::MousePos { x: 1.0, y: 0.25 });
+        assert_eq!(
+            s(&ServerMsg::StreamReady { codec: "hevc".into(), w: 1920, h: 1080, fps: 60, port: 51234, session: 3735928559, key: "k".into() }),
+            serde_json::json!({"t":"stream.ready","codec":"hevc","w":1920,"h":1080,"fps":60,"port":51234,"session":3735928559u32,"key":"k"})
+        );
+        assert_eq!(
+            s(&ServerMsg::StreamError { code: "busy".into(), msg: "m".into() }),
+            serde_json::json!({"t":"stream.error","code":"busy","msg":"m"})
+        );
+        assert_eq!(s(&ServerMsg::CursorShape { png: "p".into(), hx: 1, hy: 2 }), serde_json::json!({"t":"cursor.shape","png":"p","hx":1,"hy":2}));
     }
 
     #[test]

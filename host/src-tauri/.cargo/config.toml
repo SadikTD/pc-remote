@@ -1,0 +1,4 @@
+# libopus (opus crate) is built from source with CMake; Visual Studio Build Tools ships one.
+[env]
+CMAKE = { value = "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe", force = false }
+CMAKE_GENERATOR = { value = "Visual Studio 17 2022", force = false }

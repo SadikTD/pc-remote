@@ -29,6 +29,8 @@ impl Btn {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Ev {
     Move { dx: i32, dy: i32 },
+    /// Absolute position on the primary display, 0..=65535 on each axis.
+    Abs { x: i32, y: i32 },
     Button { b: Btn, down: bool },
     Wheel(i32),
     HWheel(i32),
@@ -78,6 +80,7 @@ impl<E: Emitter> Input<E> {
     pub fn handle(&mut self, m: &ClientMsg) -> Result<(), &'static str> {
         match m {
             ClientMsg::MouseMove { dx, dy } => self.e.emit(&[Ev::Move { dx: *dx, dy: *dy }]),
+            ClientMsg::MousePos { x, y } => self.e.emit(&[Ev::Abs { x: (x * 65535.0).round() as i32, y: (y * 65535.0).round() as i32 }]),
             ClientMsg::MouseScroll { dy, dx } => {
                 let evs: Vec<Ev> = [(*dy != 0).then_some(Ev::Wheel(*dy)), (*dx != 0).then_some(Ev::HWheel(*dx))]
                     .into_iter()
@@ -166,6 +169,7 @@ fn key(vk: u16, scan: u16, flags: KEYBD_EVENT_FLAGS) -> INPUT {
 fn to_input(ev: &Ev) -> INPUT {
     match *ev {
         Ev::Move { dx, dy } => mouse(dx, dy, 0, MOUSEEVENTF_MOVE),
+        Ev::Abs { x, y } => mouse(x, y, 0, MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE),
         Ev::Wheel(v) => mouse(0, 0, v, MOUSEEVENTF_WHEEL),
         Ev::HWheel(v) => mouse(0, 0, v, MOUSEEVENTF_HWHEEL),
         Ev::Button { b, down } => {
@@ -244,6 +248,7 @@ mod tests {
         let rec = Rec::default();
         let mut i = Input::new(rec.clone());
         i.handle(&ClientMsg::MouseMove { dx: -3, dy: 12 }).unwrap();
+        i.handle(&ClientMsg::MousePos { x: 0.5, y: 1.0 }).unwrap();
         i.handle(&ClientMsg::MouseScroll { dy: 120, dx: -120 }).unwrap();
         i.handle(&ClientMsg::MouseButton { b: "x2".into(), down: true }).unwrap();
         i.handle(&ClientMsg::MouseButton { b: "x2".into(), down: false }).unwrap();
@@ -252,6 +257,7 @@ mod tests {
             *rec.0.lock().unwrap(),
             vec![
                 Ev::Move { dx: -3, dy: 12 },
+                Ev::Abs { x: 32768, y: 65535 },
                 Ev::Wheel(120),
                 Ev::HWheel(-120),
                 Ev::Button { b: Btn::X2, down: true },
